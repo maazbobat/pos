@@ -20,7 +20,7 @@ import {
   where,
   type Firestore,
 } from "firebase/firestore";
-import { cashSession, order, type Role } from "./fixtures.js";
+import { cashSession, menuItem, modifierGroup, order, type Role } from "./fixtures.js";
 
 export const TARGET_ORG = "org-a";
 export const TARGET_LOC = "cambridge";
@@ -123,17 +123,27 @@ export const OPERATIONS: Operation[] = [
     name: "create franchise menu item",
     scope: "org",
     allowed: ["owner"],
-    run: (db, ctx) => setDoc(doc(db, `${ORG}/menuItems/${ctx.id}`), {
-      orgId: TARGET_ORG, name: "Mango slush", price: 6.25,
+    run: (db, ctx) => setDoc(doc(db, `${ORG}/menuItems/${ctx.id}`), menuItem(TARGET_ORG, { name: "Mango slush" })),
+  },
+  {
+    name: "create menu category",
+    scope: "org",
+    allowed: ["owner"],
+    run: (db, ctx) => setDoc(doc(db, `${ORG}/menuCategories/${ctx.id}`), {
+      orgId: TARGET_ORG, name: "Slushes", sortOrder: 1, active: true,
     }),
+  },
+  {
+    name: "create modifier group",
+    scope: "org",
+    allowed: ["owner"],
+    run: (db, ctx) => setDoc(doc(db, `${ORG}/modifierGroups/${ctx.id}`), modifierGroup(TARGET_ORG)),
   },
   {
     name: "create menu item tagged with another org",
     scope: "org",
     allowed: NOBODY,
-    run: (db, ctx) => setDoc(doc(db, `${ORG}/menuItems/${ctx.id}`), {
-      orgId: "org-b", name: "Mango slush", price: 6.25,
-    }),
+    run: (db, ctx) => setDoc(doc(db, `${ORG}/menuItems/${ctx.id}`), menuItem("org-b")),
   },
   {
     name: "create promotion",
@@ -246,9 +256,9 @@ export const OPERATIONS: Operation[] = [
     // A fresh document per case: writing a value that is already stored is
     // not a change, and the rules rightly allow it.
     setup: (admin, ctx) => setDoc(doc(admin, `${LOC}/menuOverrides/${ctx.id}`), {
-      ...IDS, itemId: ctx.id, available: true, price: 6,
+      ...IDS, itemId: ctx.id, available: true, priceCents: 600,
     }),
-    run: (db, ctx) => updateDoc(doc(db, `${LOC}/menuOverrides/${ctx.id}`), { price: 6.5 }),
+    run: (db, ctx) => updateDoc(doc(db, `${LOC}/menuOverrides/${ctx.id}`), { priceCents: 650 }),
   },
   {
     name: "mark an item sold out",

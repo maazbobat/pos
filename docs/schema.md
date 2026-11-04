@@ -16,7 +16,7 @@ orgs/{orgId}                         name, type, status, accessLevel, plan
   supportGrants/{adminUid}           time-boxed platform support access (Functions only)
   auditLog/{eventId}                 append-only (Functions only)
   config/{brand | loyalty | receipt}
-  menuItems/ modifierGroups/ combos/ promotions/
+  menuCategories/ menuItems/ modifierGroups/ combos/ promotions/
   reports/{reportId}                 cross-location rollups (Functions only)
 
   locations/{locationId}             name, status, timezone, province
@@ -60,3 +60,23 @@ orgs/org-a/members/uid_123 = {
 One role per location. Devices are members with `kind: "device"` and the
 `device` role at one location; staff switch on a device with a PIN, and
 elevated actions go through Functions that check a manager PIN server-side.
+
+## Menu
+
+Owners edit the org menu directly (the rules check each document's shape);
+locations override availability and price. Money is always whole cents
+(`int`), never a float. `pos_shared` has the models, their `validate()`
+checks, and `buildLocationMenu`, which merges the org menu with one store's
+overrides for the POS.
+
+| Document | Fields |
+| --- | --- |
+| `menuCategories/{id}` | `name` (1-60), `sortOrder` int, `active` |
+| `menuItems/{id}` | `name` (1-100), `description?`, `categoryId`, `priceCents`, `modifierGroupIds[]` (max 20), `taxable`, `kitchenStation?`, `active`, `sortOrder`, `imagePath?` |
+| `modifierGroups/{id}` | `name`, `minSelect`, `maxSelect` (min ≤ max ≤ options), `options[]` of `{id, name, priceDeltaCents}` (1-50) |
+| `locations/{id}/menuOverrides/{itemId}` | `available`, `priceCents` (null = org price) |
+
+Front-of-house roles can only flip `available` on an override (sold out).
+Rules can't look inside list entries, so option prices and IDs are checked by
+the apps through the models. Combos and promotions keep their milestone-1
+rules until they get their own design.

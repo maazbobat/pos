@@ -50,7 +50,9 @@ export async function seed(db: Firestore): Promise<void> {
     set(o, { name: org.name, type: org.type, status: "active", accessLevel: "full", plan: "professional" });
     set(`${o}/billing/subscription`, { orgId, status: "active", plan: "professional" });
     set(`${o}/config/brand`, { orgId, displayName: org.name, primaryColor: "#2E7D32" });
-    set(`${o}/menuItems/item-1`, { orgId, name: "House drink", price: 5.5 });
+    set(`${o}/menuCategories/cat-1`, { orgId, name: "Drinks", sortOrder: 0, active: true });
+    set(`${o}/menuItems/item-1`, menuItem(orgId));
+    set(`${o}/modifierGroups/mod-1`, modifierGroup(orgId));
     set(`${o}/promotions/promo-1`, { orgId, name: "Happy hour", percentOff: 10 });
     set(`${o}/auditLog/evt-org`, { orgId, action: "org.created", createdAt: past });
     set(`${o}/reports/rollup`, { orgId, kind: "sales", total: 1000 });
@@ -68,7 +70,7 @@ export async function seed(db: Firestore): Promise<void> {
       const ids = { orgId, locationId: locId };
       set(l, { ...ids, name: locName, status: "active", timezone: "America/Toronto", province: "ON" });
       set(`${l}/settings/hardware`, { ...ids, printerIp: "192.168.1.50", drawer: "printer" });
-      set(`${l}/menuOverrides/item-1`, { ...ids, itemId: "item-1", available: true, price: 6 });
+      set(`${l}/menuOverrides/item-1`, { ...ids, itemId: "item-1", available: true, priceCents: 600 });
       set(`${l}/staff/${extraUid(orgId)}`, { ...ids, role: "cashier" });
       set(`${l}/devices/device-other`, { ...ids, type: "pos", status: "active", appVersion: "0.1.0" });
       set(`${l}/devices/device-other/private/pinGuard`, { failures: 2, lockedUntil: null });
@@ -100,6 +102,36 @@ export function membership(orgId: OrgId, uid: string, role: Role, locId?: string
     orgRole: role === "owner" ? "owner" : null,
     locationRoles: role === "owner" || !locId ? {} : { [locId]: role },
     roles: [role],
+  };
+}
+
+export function menuItem(orgId: string, overrides: Record<string, unknown> = {}) {
+  return {
+    orgId,
+    name: "House drink",
+    description: null,
+    categoryId: "cat-1",
+    priceCents: 550,
+    modifierGroupIds: ["mod-1"],
+    taxable: true,
+    kitchenStation: "bar",
+    active: true,
+    sortOrder: 0,
+    ...overrides,
+  };
+}
+
+export function modifierGroup(orgId: string, overrides: Record<string, unknown> = {}) {
+  return {
+    orgId,
+    name: "Sweetness",
+    minSelect: 1,
+    maxSelect: 1,
+    options: [
+      { id: "full", name: "100%", priceDeltaCents: 0 },
+      { id: "half", name: "50%", priceDeltaCents: 0 },
+    ],
+    ...overrides,
   };
 }
 

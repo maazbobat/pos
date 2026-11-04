@@ -14,6 +14,7 @@ abstract final class FirestorePaths {
   static String member(String orgId, String uid) => '${members(orgId)}/$uid';
   static String orgConfig(String orgId, String id) =>
       '${org(orgId)}/config/$id';
+  static String menuCategories(String orgId) => '${org(orgId)}/menuCategories';
   static String menuItems(String orgId) => '${org(orgId)}/menuItems';
   static String modifierGroups(String orgId) => '${org(orgId)}/modifierGroups';
   static String combos(String orgId) => '${org(orgId)}/combos';

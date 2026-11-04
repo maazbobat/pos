@@ -17,7 +17,7 @@ import {
 } from "firebase/firestore";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { asAdmin, createEnv, dbFor } from "./env.js";
-import { cashSession, memberUid, ownerUid, PLATFORM_ADMIN, seed } from "./fixtures.js";
+import { cashSession, memberUid, menuItem, modifierGroup, ownerUid, PLATFORM_ADMIN, seed } from "./fixtures.js";
 
 const A = "orgs/org-a";
 const CAMBRIDGE = `${A}/locations/cambridge`;
@@ -225,6 +225,62 @@ describe("platform admin access", () => {
       { reason: "x", expiresAt: Timestamp.fromDate(new Date(Date.now() + 3_600_000)) },
     ));
     await assertFails(getDoc(doc(as(uid), A)));
+  });
+});
+
+describe("menu documents must have the right shape", () => {
+  const owner = () => as(ownerUid("org-a"));
+  const item = (id: string, data: Record<string, unknown>) => setDoc(doc(owner(), `${A}/menuItems/${id}`), data);
+
+  test("a valid item, category and modifier group are accepted", async () => {
+    await assertSucceeds(item("ok", menuItem("org-a")));
+    await assertSucceeds(setDoc(doc(owner(), `${A}/menuCategories/c2`), { orgId: "org-a", name: "Food", sortOrder: 2, active: true }));
+    await assertSucceeds(setDoc(doc(owner(), `${A}/modifierGroups/m2`), modifierGroup("org-a")));
+  });
+
+  test("prices are whole, non-negative cents", async () => {
+    await assertFails(item("float", menuItem("org-a", { priceCents: 5.5 })));
+    await assertFails(item("negative", menuItem("org-a", { priceCents: -100 })));
+    await assertFails(item("string", menuItem("org-a", { priceCents: "550" })));
+    await assertFails(item("old-field", { ...menuItem("org-a"), price: 5.5 }));
+    await assertSucceeds(item("free", menuItem("org-a", { priceCents: 0 })));
+  });
+
+  test("required fields, types and unknown keys are checked", async () => {
+    const { categoryId: _c, ...noCategory } = menuItem("org-a");
+    await assertFails(item("no-category", noCategory));
+    await assertFails(item("empty-name", menuItem("org-a", { name: "" })));
+    await assertFails(item("taxable-string", menuItem("org-a", { taxable: "yes" })));
+    await assertFails(item("extra", menuItem("org-a", { costCents: 100 })));
+  });
+
+  test("a partial update must still leave a valid item", async () => {
+    const ref = doc(owner(), `${A}/menuItems/item-1`);
+    await assertSucceeds(updateDoc(ref, { priceCents: 600 }));
+    await assertFails(updateDoc(ref, { priceCents: 6.0001 }));
+    await assertFails(updateDoc(ref, { name: "" }));
+  });
+
+  test("modifier groups need a sane min/max and at least one option", async () => {
+    const group = (id: string, o: Record<string, unknown>) =>
+      setDoc(doc(owner(), `${A}/modifierGroups/${id}`), modifierGroup("org-a", o));
+    await assertFails(group("min-over-max", { minSelect: 2, maxSelect: 1 }));
+    await assertFails(group("max-over-options", { maxSelect: 3 }));
+    await assertFails(group("no-options", { options: [], minSelect: 0, maxSelect: 1 }));
+    await assertSucceeds(group("optional-multi", { minSelect: 0, maxSelect: 2 }));
+  });
+
+  test("location overrides take cents or null, and staff can still only flip availability", async () => {
+    const manager = as(memberUid("org-a", "cambridge", "store_manager"));
+    const ref = (db: ReturnType<typeof as>) => doc(db, `${CAMBRIDGE}/menuOverrides/item-1`);
+    await assertSucceeds(updateDoc(ref(manager), { priceCents: null }));
+    await assertFails(updateDoc(ref(manager), { priceCents: 6.5 }));
+    await assertFails(setDoc(doc(manager, `${CAMBRIDGE}/menuOverrides/item-2`), {
+      orgId: "org-a", locationId: "cambridge", itemId: "item-3", available: true,
+    }));
+    const cashier = as(memberUid("org-a", "cambridge", "cashier"));
+    await assertSucceeds(updateDoc(ref(cashier), { available: false }));
+    await assertFails(updateDoc(ref(cashier), { priceCents: 100 }));
   });
 });
 

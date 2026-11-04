@@ -284,14 +284,70 @@ service cloud.firestore {
         allow create, update: if orgConfigWritable();
         allow delete: if false;
       }
+      // ---------- Menu ----------
+      // Money is whole cents (int), never a float. Rules check every field's
+      // type and the allowed key set on the document as it would be stored,
+      // so a create and a partial update are held to the same shape.
+      // Rules can't loop over list entries; the apps validate options and
+      // modifierGroupIds entries with the pos_shared models.
+
+      function isCents(v) {
+        return v is int && v >= 0 && v <= 10000000;
+      }
+
+      function optString(data, key, max) {
+        return !(key in data) || data[key] == null
+          || (data[key] is string && data[key].size() <= max);
+      }
+
+      function validCategory(d) {
+        return d.keys().hasOnly(['orgId', 'name', 'sortOrder', 'active',
+                                 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+          && d.name is string && d.name.size() > 0 && d.name.size() <= 60
+          && d.sortOrder is int
+          && d.active is bool;
+      }
+
+      function validMenuItem(d) {
+        return d.keys().hasOnly(['orgId', 'name', 'description', 'categoryId', 'priceCents',
+                                 'modifierGroupIds', 'taxable', 'kitchenStation', 'active',
+                                 'sortOrder', 'imagePath',
+                                 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+          && d.name is string && d.name.size() > 0 && d.name.size() <= 100
+          && optString(d, 'description', 500)
+          && d.categoryId is string && d.categoryId.size() > 0
+          && isCents(d.priceCents)
+          && d.modifierGroupIds is list && d.modifierGroupIds.size() <= 20
+          && d.taxable is bool
+          && optString(d, 'kitchenStation', 40)
+          && d.active is bool
+          && d.sortOrder is int
+          && optString(d, 'imagePath', 300);
+      }
+
+      function validModifierGroup(d) {
+        return d.keys().hasOnly(['orgId', 'name', 'minSelect', 'maxSelect', 'options',
+                                 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+          && d.name is string && d.name.size() > 0 && d.name.size() <= 60
+          && d.minSelect is int && d.maxSelect is int
+          && d.minSelect >= 0 && d.maxSelect >= 1 && d.minSelect <= d.maxSelect
+          && d.options is list && d.options.size() >= 1 && d.options.size() <= 50
+          && d.maxSelect <= d.options.size();
+      }
+
+      match /menuCategories/{docId} {
+        allow read: if orgConfigReadable();
+        allow create, update: if orgConfigWritable() && validCategory(incoming());
+        allow delete: if orgWritable(orgId) && isOwner(orgId);
+      }
       match /menuItems/{docId} {
         allow read: if orgConfigReadable();
-        allow create, update: if orgConfigWritable();
+        allow create, update: if orgConfigWritable() && validMenuItem(incoming());
         allow delete: if orgWritable(orgId) && isOwner(orgId);
       }
       match /modifierGroups/{docId} {
         allow read: if orgConfigReadable();
-        allow create, update: if orgConfigWritable();
+        allow create, update: if orgConfigWritable() && validModifierGroup(incoming());
         allow delete: if orgWritable(orgId) && isOwner(orgId);
       }
       match /combos/{docId} {
@@ -327,13 +383,24 @@ service cloud.firestore {
         // Availability and price overrides of the org menu at this store.
         // Front-of-house roles may only flip `available` (sold out).
         match /menuOverrides/{itemId} {
+          // `priceCents: null` (or absent) means the org price applies here.
+          function validOverride(d) {
+            return d.keys().hasOnly(['orgId', 'locationId', 'itemId', 'available', 'priceCents',
+                                     'updatedAt', 'updatedBy'])
+              && d.itemId == itemId
+              && d.available is bool
+              && (!('priceCents' in d) || d.priceCents == null || isCents(d.priceCents));
+          }
+
           allow read: if canReadAt(orgId, locId, ALL_ROLES());
           allow create: if tenantIdsMatch(orgId, locId)
+            && validOverride(incoming())
             && (canWriteAt(orgId, locId, MANAGERS())
                 || (canWriteAt(orgId, locId, SOLD_OUT_TOGGLERS())
                     && incoming().keys().hasOnly(
                         ['orgId', 'locationId', 'itemId', 'available', 'updatedAt', 'updatedBy'])));
           allow update: if protectedKeysUnchanged()
+            && validOverride(incoming())
             && (canWriteAt(orgId, locId, MANAGERS())
                 || (canWriteAt(orgId, locId, SOLD_OUT_TOGGLERS())
                     && changedKeys().hasOnly(['available', 'updatedAt', 'updatedBy'])));
