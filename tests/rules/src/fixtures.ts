@@ -59,6 +59,10 @@ export async function seed(db: Firestore): Promise<void> {
     const firstLoc = Object.keys(org.locations)[0];
     set(`${o}/members/${extraUid(orgId)}`, membership(orgId, extraUid(orgId), "cashier", firstLoc));
 
+    set(`${o}/invites/inv-owner`, { orgId, locationId: null, email: "new-owner@example.com", role: "owner", status: "pending" });
+    set(`${o}/pinIndex/pin-key-1`, { uid: extraUid(orgId) });
+    set(`${o}/memberSecrets/${extraUid(orgId)}`, { pinKey: "pin-key-1" });
+
     for (const [locId, locName] of Object.entries(org.locations)) {
       const l = `${o}/locations/${locId}`;
       const ids = { orgId, locationId: locId };
@@ -67,6 +71,8 @@ export async function seed(db: Firestore): Promise<void> {
       set(`${l}/menuOverrides/item-1`, { ...ids, itemId: "item-1", available: true, price: 6 });
       set(`${l}/staff/${extraUid(orgId)}`, { ...ids, role: "cashier" });
       set(`${l}/devices/device-other`, { ...ids, type: "pos", status: "active", appVersion: "0.1.0" });
+      set(`${l}/devices/device-other/private/pinGuard`, { failures: 2, lockedUntil: null });
+      set(`${o}/invites/inv-${locId}`, { ...ids, email: `new-${locId}@example.com`, role: "cashier", status: "pending" });
       set(`${l}/orders/order-1`, order(ids, "unpaid", memberUid(orgId, locId, "cashier")));
       set(`${l}/orders/order-1/payments/pay-1`, {
         ...ids, orderId: "order-1", method: "cash", amount: 5.5, createdBy: "seed", createdAt: past,

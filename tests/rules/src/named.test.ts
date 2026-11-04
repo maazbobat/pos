@@ -259,6 +259,20 @@ describe("queries are designed with their rules", () => {
     await assertFails(getDocs(collection(db, `${A}/auditLog`)));
   });
 
+  test("a store manager lists their store's invites, not the org's or the owner invites", async () => {
+    const db = as(memberUid("org-a", "cambridge", "store_manager"));
+    const invites = await assertSucceeds(getDocs(query(collection(db, `${A}/invites`), where("locationId", "==", "cambridge"))));
+    expect(invites.docs.map((d) => d.id)).toEqual(["inv-cambridge"]);
+    await assertFails(getDocs(query(collection(db, `${A}/invites`), where("locationId", "==", "toronto"))));
+    await assertFails(getDocs(collection(db, `${A}/invites`)));
+    await assertFails(getDoc(doc(db, `${A}/invites/inv-owner`)));
+  });
+
+  test("an owner lists every invite in the org", async () => {
+    const invites = await assertSucceeds(getDocs(collection(as(ownerUid("org-a")), `${A}/invites`)));
+    expect(invites.docs.map((d) => d.id).sort()).toEqual(["inv-cambridge", "inv-owner", "inv-toronto"]);
+  });
+
   test("an inventory manager can read inventory reports but not sales reports", async () => {
     const db = as(memberUid("org-a", "cambridge", "inventory_manager"));
     await assertSucceeds(getDocs(query(collection(db, `${CAMBRIDGE}/reports`), where("kind", "==", "inventory"))));

@@ -14,8 +14,10 @@ import {
   getDoc,
   getDocs,
   serverTimestamp,
+  query,
   setDoc,
   updateDoc,
+  where,
   type Firestore,
 } from "firebase/firestore";
 import { cashSession, order, type Role } from "./fixtures.js";
@@ -264,6 +266,32 @@ export const OPERATIONS: Operation[] = [
     scope: "location",
     allowed: MANAGERS,
     run: (db) => getDocs(collection(db, `${LOC}/staff`)),
+  },
+  {
+    name: "list the location's pending invites",
+    scope: "location",
+    allowed: MANAGERS,
+    run: (db) => getDocs(query(collection(db, `${ORG}/invites`), where("locationId", "==", TARGET_LOC))),
+  },
+  {
+    name: "create an invite directly",
+    scope: "location",
+    allowed: NOBODY,
+    run: (db, ctx) => setDoc(doc(db, `${ORG}/invites/${ctx.id}`), {
+      ...IDS, email: "x@example.com", role: "store_manager", status: "pending",
+    }),
+  },
+  {
+    name: "read the staff PIN index",
+    scope: "org",
+    allowed: NOBODY,
+    run: (db) => getDoc(doc(db, `${ORG}/pinIndex/pin-key-1`)),
+  },
+  {
+    name: "read a member's PIN secret",
+    scope: "org",
+    allowed: NOBODY,
+    run: (db) => getDoc(doc(db, `${ORG}/memberSecrets/org-a-extra`)),
   },
 
   // ---------- Orders ----------
@@ -543,6 +571,19 @@ export const OPERATIONS: Operation[] = [
     run: (db, ctx) => setDoc(doc(db, `${LOC}/devices/${ctx.id}`), {
       ...IDS, type: "pos", status: "active",
     }),
+  },
+
+  {
+    name: "read a device's PIN-attempt counter",
+    scope: "location",
+    allowed: NOBODY,
+    run: (db) => getDoc(doc(db, `${LOC}/devices/device-other/private/pinGuard`)),
+  },
+  {
+    name: "reset a device's PIN-attempt counter",
+    scope: "location",
+    allowed: NOBODY,
+    run: (db) => setDoc(doc(db, `${LOC}/devices/device-other/private/pinGuard`), { failures: 0 }),
   },
 
   // ---------- Reports ----------
