@@ -1,18 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:pos_firebase_backend/pos_firebase_backend.dart';
 
-void main() {
-  runApp(const App());
-}
+import 'src/app.dart';
 
-/// Placeholder until onboarding (roadmap step 2) adds real screens.
-class App extends StatelessWidget {
-  const App({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const MaterialApp(
-      title: 'Platform admin',
-      home: Scaffold(body: Center(child: Text('Platform admin'))),
-    );
-  }
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final backend = await initFirebaseBackend();
+  runApp(AdminApp(backend: backend));
 }

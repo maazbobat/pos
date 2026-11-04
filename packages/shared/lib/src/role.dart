@@ -39,4 +39,39 @@ enum Role {
     cashier,
     device,
   };
+
+  /// Display name for the apps.
+  String get label => switch (this) {
+    owner => 'Owner',
+    franchiseOwner => 'Franchise owner',
+    storeManager => 'Store manager',
+    cashier => 'Cashier',
+    kitchen => 'Kitchen',
+    inventoryManager => 'Inventory manager',
+    accountant => 'Accountant',
+    device => 'Device',
+  };
+
+  /// The location roles this role may invite, change to or remove. Mirrors
+  /// `canAssign` in functions/src/lib/roles.ts, which is what enforces it;
+  /// the apps use this only to decide which choices to show.
+  Set<Role> get assignableRoles => switch (this) {
+    owner => {
+      franchiseOwner,
+      storeManager,
+      cashier,
+      kitchen,
+      inventoryManager,
+      accountant,
+    },
+    franchiseOwner => {
+      storeManager,
+      cashier,
+      kitchen,
+      inventoryManager,
+      accountant,
+    },
+    storeManager => {cashier, kitchen, inventoryManager},
+    _ => const {},
+  };
 }

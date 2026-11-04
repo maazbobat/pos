@@ -9,3 +9,4 @@ workspace:
   - apps/manager
   - apps/admin
   - packages/shared
+  - packages/firebase_backend
