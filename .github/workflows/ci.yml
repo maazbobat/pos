@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  dart:
+    name: Flutter analyze and Dart tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - name: Shared package tests
+        working-directory: packages/shared
+        run: dart test
+
+  rules:
+    name: Firestore rules tests (emulator)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npm run typecheck -w tests/rules
+      - run: npm run build:functions
+      # Uses a demo- project ID, so the emulator can't reach a real project.
+      - run: npm run test:rules

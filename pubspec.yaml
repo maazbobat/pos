@@ -1,0 +1,11 @@
+name: pos_workspace
+publish_to: none
+
+environment:
+  sdk: ^3.13.7
+
+workspace:
+  - apps/pos
+  - apps/manager
+  - apps/admin
+  - packages/shared

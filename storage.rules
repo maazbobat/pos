@@ -1,0 +1,11 @@
+rules_version = '2';
+
+// Nothing is stored yet. Uploads (menu images, receipt logos) will be scoped
+// under orgs/{orgId}/... with the same membership checks as Firestore.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,22 @@
+# Dart / Flutter
+.dart_tool/
+.packages
+build/
+*.iml
+.idea/
+.flutter-plugins-dependencies
+coverage/
+
+# Node
+node_modules/
+functions/lib/
+
+# Firebase
+*-debug.log
+.firebase/
+*.local
+firebase-export-*/
+
+# OS / editors
+.DS_Store
+.vscode/
