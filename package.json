@@ -6,6 +6,7 @@
   "scripts": {
     "build:functions": "npm run build -w functions",
     "test:rules": "firebase emulators:exec --only firestore --project demo-pos \"npm test -w tests/rules\"",
+    "seed:dev": "node functions/scripts/seed-dev.mjs",
     "test:functions": "firebase emulators:exec --only firestore,auth --project demo-pos \"npm test -w functions\""
   },
   "devDependencies": {

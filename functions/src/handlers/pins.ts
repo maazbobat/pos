@@ -89,7 +89,7 @@ export async function resolveStaffPin(
   if (!staff || staff.kind !== "user") return null;
   const role = roleAt(staff, locationId);
   if (!role) return null;
-  return { uid: staff.uid, displayName: staff.displayName ?? null, role };
+  return { uid: staff.uid, displayName: staff.displayName ?? staff.email ?? null, role };
 }
 
 /** Called by a paired device when someone types their PIN. */

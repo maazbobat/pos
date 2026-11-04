@@ -7,7 +7,7 @@ on:
 
 jobs:
   dart:
-    name: Flutter analyze and Dart tests
+    name: Flutter analyze, Dart and widget tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,6 +20,15 @@ jobs:
       - name: Shared package tests
         working-directory: packages/shared
         run: dart test
+      - name: POS widget tests
+        working-directory: apps/pos
+        run: flutter test
+      - name: Manager widget tests
+        working-directory: apps/manager
+        run: flutter test
+      - name: Admin widget tests
+        working-directory: apps/admin
+        run: flutter test
 
   rules:
     name: Rules and Functions tests (emulator)
