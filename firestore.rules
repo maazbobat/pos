@@ -228,6 +228,27 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // Pending staff invites (written by the invite Functions). Owners see
+      // all of them; managers see their own location's, so a manager's query
+      // must filter on locationId. The token is stored only as a hash.
+      match /invites/{inviteId} {
+        allow read: if (orgReadable(orgId)
+            && (isOwner(orgId)
+                || (resource.data.locationId is string
+                    && hasRole(orgId, resource.data.locationId, MANAGERS()))))
+          || hasSupportGrant(orgId);
+        allow write: if false;
+      }
+
+      // Staff PIN lookups and per-member secrets: Functions only, never
+      // readable, not even by the member or a support grant.
+      match /pinIndex/{key} {
+        allow read, write: if false;
+      }
+      match /memberSecrets/{uid} {
+        allow read, write: if false;
+      }
+
       match /supportGrants/{adminUid} {
         allow read: if isUser(adminUid) || (orgReadable(orgId) && isOwner(orgId));
         allow write: if false;
@@ -334,6 +355,11 @@ service cloud.firestore {
             && canWriteAt(orgId, locId, ['device'])
             && changedKeys().hasOnly(['appVersion', 'lastSeenAt', 'printerStatus', 'health']);
           allow create, delete: if false;
+
+          // PIN-attempt counters for the device's PIN pad (Functions only).
+          match /private/{docId} {
+            allow read, write: if false;
+          }
         }
 
         // ---------- Orders ----------

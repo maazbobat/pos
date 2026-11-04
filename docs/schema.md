@@ -10,6 +10,9 @@ users/{uid}                          profile; orgIds[] maintained by Functions
 orgs/{orgId}                         name, type, status, accessLevel, plan
   billing/subscription               Stripe state (webhook Function only)
   members/{uid}                      orgRole, locationRoles {locationId: role}, roles[], kind, status
+  invites/{inviteId}                 pending staff invites; token stored as a hash (Functions only)
+  pinIndex/{hmac}                    staff PIN lookup, HMAC of the PIN (Functions only, unreadable)
+  memberSecrets/{uid}                a member's current PIN key (Functions only, unreadable)
   supportGrants/{adminUid}           time-boxed platform support access (Functions only)
   auditLog/{eventId}                 append-only (Functions only)
   config/{brand | loyalty | receipt}
@@ -21,6 +24,7 @@ orgs/{orgId}                         name, type, status, accessLevel, plan
     menuOverrides/{itemId}           available, price
     staff/{uid}                      staff list mirrored from memberships (Functions only)
     devices/{deviceId}               type, status, appVersion, lastSeenAt, printer health
+      private/pinGuard               wrong-PIN counter and lockout (Functions only)
     orders/{orderId}
       payments/{paymentId}           no card data; clients record cash only
     cashSessions/{sessionId}

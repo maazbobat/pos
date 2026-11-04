@@ -8,15 +8,20 @@ abstract final class FirestorePaths {
   static String user(String uid) => 'users/$uid';
 
   static String org(String orgId) => 'orgs/$orgId';
-  static String subscription(String orgId) => '${org(orgId)}/billing/subscription';
+  static String subscription(String orgId) =>
+      '${org(orgId)}/billing/subscription';
   static String members(String orgId) => '${org(orgId)}/members';
   static String member(String orgId, String uid) => '${members(orgId)}/$uid';
-  static String orgConfig(String orgId, String id) => '${org(orgId)}/config/$id';
+  static String orgConfig(String orgId, String id) =>
+      '${org(orgId)}/config/$id';
   static String menuItems(String orgId) => '${org(orgId)}/menuItems';
   static String modifierGroups(String orgId) => '${org(orgId)}/modifierGroups';
   static String combos(String orgId) => '${org(orgId)}/combos';
   static String promotions(String orgId) => '${org(orgId)}/promotions';
   static String auditLog(String orgId) => '${org(orgId)}/auditLog';
+
+  /// Pending staff invites. Managers must query with `locationId ==`.
+  static String invites(String orgId) => '${org(orgId)}/invites';
   static String orgReports(String orgId) => '${org(orgId)}/reports';
 
   static String locations(String orgId) => '${org(orgId)}/locations';
