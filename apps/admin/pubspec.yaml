@@ -12,6 +12,7 @@ dependencies:
   flutter:
     sdk: flutter
   pos_shared:
+  pos_firebase_backend:
 
 dev_dependencies:
   flutter_test:
