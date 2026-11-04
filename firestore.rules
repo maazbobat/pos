@@ -1,0 +1,469 @@
+rules_version = '2';
+
+// Multi-tenant access rules.
+//
+// Tenancy comes from the document path, never from client-supplied fields:
+//   orgs/{orgId}                         organization-wide data
+//   orgs/{orgId}/locations/{locationId}  store data
+// A caller's access is read from orgs/{orgId}/members/{uid}, which only Cloud
+// Functions write. The permission matrix these rules implement lives in
+// tests/rules/src/matrix.ts, and the tests check every cell of it.
+//
+// Rules are not filters: a query is refused unless every document it could
+// return is readable, so queries must carry the same constraints the rules
+// check (for example `openedBy == uid` for a cashier's own cash sessions).
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- Identity ----------
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isUser(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    // ---------- Membership and tenant state ----------
+
+    function memberPath(orgId) {
+      return /databases/$(database)/documents/orgs/$(orgId)/members/$(request.auth.uid);
+    }
+
+    function member(orgId) {
+      return get(memberPath(orgId)).data;
+    }
+
+    function isActiveMember(orgId) {
+      return signedIn()
+        && exists(memberPath(orgId))
+        && member(orgId).status == 'active';
+    }
+
+    function isOwner(orgId) {
+      return isActiveMember(orgId) && member(orgId).get('orgRole', null) == 'owner';
+    }
+
+    function org(orgId) {
+      return get(/databases/$(database)/documents/orgs/$(orgId)).data;
+    }
+
+    function loc(orgId, locId) {
+      return get(/databases/$(database)/documents/orgs/$(orgId)/locations/$(locId)).data;
+    }
+
+    // The role the caller acts with at a location. Owners act as 'owner'
+    // everywhere; everyone else needs a role for that specific location.
+    // Callers must check isActiveMember() first.
+    function roleAt(orgId, locId) {
+      return member(orgId).get('orgRole', null) == 'owner'
+        ? 'owner'
+        : member(orgId).get('locationRoles', {}).get(locId, null);
+    }
+
+    function hasRole(orgId, locId, roles) {
+      return roleAt(orgId, locId) in roles;
+    }
+
+    // Distinct roles held anywhere in the org (maintained by Functions).
+    function hasAnyRoleInOrg(orgId, roles) {
+      return member(orgId).get('roles', []).hasAny(roles);
+    }
+
+    // A suspended org stays readable by its owner, so owners are never
+    // locked out of their own data.
+    function orgReadable(orgId) {
+      return isActiveMember(orgId)
+        && (org(orgId).status == 'active' || isOwner(orgId));
+    }
+
+    // Writes need an active org with full (not read-only) billing access.
+    function orgWritable(orgId) {
+      return isActiveMember(orgId)
+        && org(orgId).status == 'active'
+        && org(orgId).accessLevel == 'full';
+    }
+
+    function locReadable(orgId, locId) {
+      return loc(orgId, locId).status == 'active' || isOwner(orgId);
+    }
+
+    function locWritable(orgId, locId) {
+      return loc(orgId, locId).status == 'active';
+    }
+
+    function canReadAt(orgId, locId, roles) {
+      return (orgReadable(orgId) && hasRole(orgId, locId, roles) && locReadable(orgId, locId))
+        || hasSupportGrant(orgId);
+    }
+
+    function canWriteAt(orgId, locId, roles) {
+      return orgWritable(orgId) && hasRole(orgId, locId, roles) && locWritable(orgId, locId);
+    }
+
+    // ---------- Platform support access ----------
+
+    // Being a platform admin grants nothing alone. A Cloud Function creates
+    // orgs/{orgId}/supportGrants/{adminUid} with an expiry and an audit entry;
+    // only then can that admin read the org, and never write to it.
+    function isPlatformAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid));
+    }
+
+    function hasSupportGrant(orgId) {
+      let grant = /databases/$(database)/documents/orgs/$(orgId)/supportGrants/$(request.auth.uid);
+      return isPlatformAdmin()
+        && exists(grant)
+        && get(grant).data.expiresAt > request.time;
+    }
+
+    // ---------- Role sets ----------
+
+    function ALL_ROLES() {
+      return ['owner', 'franchise_owner', 'store_manager', 'cashier', 'kitchen',
+              'inventory_manager', 'accountant', 'device'];
+    }
+    function MANAGERS() {
+      return ['owner', 'franchise_owner', 'store_manager'];
+    }
+    function SELLERS() {
+      return ['owner', 'franchise_owner', 'store_manager', 'cashier', 'device'];
+    }
+    function ORDER_READERS() {
+      return ['owner', 'franchise_owner', 'store_manager', 'cashier', 'device',
+              'kitchen', 'accountant'];
+    }
+    function PAYMENT_READERS() {
+      return ['owner', 'franchise_owner', 'store_manager', 'cashier', 'device', 'accountant'];
+    }
+    function SOLD_OUT_TOGGLERS() {
+      return ['cashier', 'kitchen', 'device'];
+    }
+    function INVENTORY_EDITORS() {
+      return ['owner', 'franchise_owner', 'store_manager', 'inventory_manager'];
+    }
+    function INVENTORY_READERS() {
+      return ['owner', 'franchise_owner', 'store_manager', 'inventory_manager',
+              'kitchen', 'accountant'];
+    }
+    function MONEY_READERS() {
+      return ['owner', 'franchise_owner', 'store_manager', 'accountant'];
+    }
+
+    // ---------- Field helpers ----------
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function changedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    // Tenant IDs on a new document must match the path they are written to.
+    function orgIdMatches(orgId) {
+      return incoming().orgId == orgId;
+    }
+
+    function tenantIdsMatch(orgId, locId) {
+      return incoming().orgId == orgId && incoming().locationId == locId;
+    }
+
+    function protectedKeysUnchanged() {
+      return !changedKeys().hasAny(['orgId', 'locationId', 'createdAt', 'createdBy']);
+    }
+
+    function createdByCaller() {
+      return incoming().createdBy == request.auth.uid
+        && incoming().createdAt == request.time;
+    }
+
+    // ================================================================
+    // Platform-level collections
+    // ================================================================
+
+    match /platformAdmins/{uid} {
+      allow read: if isUser(uid);
+      allow write: if false;
+    }
+
+    match /pairingCodes/{code} {
+      allow read, write: if false;
+    }
+
+    match /users/{uid} {
+      allow read: if isUser(uid);
+      // orgIds powers the org picker and is maintained by Functions.
+      allow create: if isUser(uid) && !('orgIds' in incoming());
+      allow update: if isUser(uid) && !changedKeys().hasAny(['orgIds']);
+      allow delete: if false;
+    }
+
+    // ================================================================
+    // Organization
+    // ================================================================
+
+    match /orgs/{orgId} {
+      allow read: if orgReadable(orgId) || hasSupportGrant(orgId);
+      // status, accessLevel, plan and type are set by Functions only.
+      allow update: if orgWritable(orgId)
+        && isOwner(orgId)
+        && changedKeys().hasOnly(['name', 'updatedAt']);
+      allow create, delete: if false;
+
+      match /billing/{docId} {
+        allow read: if (orgReadable(orgId)
+            && (isOwner(orgId) || hasAnyRoleInOrg(orgId, ['franchise_owner', 'accountant'])))
+          || hasSupportGrant(orgId);
+        allow write: if false;
+      }
+
+      match /members/{uid} {
+        allow read: if isUser(uid)
+          || (orgReadable(orgId) && isOwner(orgId))
+          || hasSupportGrant(orgId);
+        allow write: if false;
+      }
+
+      match /supportGrants/{adminUid} {
+        allow read: if isUser(adminUid) || (orgReadable(orgId) && isOwner(orgId));
+        allow write: if false;
+      }
+
+      match /auditLog/{eventId} {
+        allow read: if (orgReadable(orgId)
+            && (isOwner(orgId)
+                || hasRole(orgId, resource.data.get('locationId', ''), ['franchise_owner'])))
+          || hasSupportGrant(orgId);
+        allow write: if false;
+      }
+
+      match /reports/{reportId} {
+        allow read: if (orgReadable(orgId) && isOwner(orgId)) || hasSupportGrant(orgId);
+        allow write: if false;
+      }
+
+      // Org-wide configuration: brand, loyalty, receipts, franchise menu.
+      function orgConfigReadable() {
+        return orgReadable(orgId) || hasSupportGrant(orgId);
+      }
+
+      function orgConfigWritable() {
+        return orgWritable(orgId)
+          && isOwner(orgId)
+          && orgIdMatches(orgId)
+          && (resource == null || !changedKeys().hasAny(['orgId', 'createdAt', 'createdBy']));
+      }
+
+      match /config/{docId} {
+        allow read: if orgConfigReadable();
+        allow create, update: if orgConfigWritable();
+        allow delete: if false;
+      }
+      match /menuItems/{docId} {
+        allow read: if orgConfigReadable();
+        allow create, update: if orgConfigWritable();
+        allow delete: if orgWritable(orgId) && isOwner(orgId);
+      }
+      match /modifierGroups/{docId} {
+        allow read: if orgConfigReadable();
+        allow create, update: if orgConfigWritable();
+        allow delete: if orgWritable(orgId) && isOwner(orgId);
+      }
+      match /combos/{docId} {
+        allow read: if orgConfigReadable();
+        allow create, update: if orgConfigWritable();
+        allow delete: if orgWritable(orgId) && isOwner(orgId);
+      }
+      match /promotions/{docId} {
+        allow read: if orgConfigReadable();
+        allow create, update: if orgConfigWritable();
+        allow delete: if orgWritable(orgId) && isOwner(orgId);
+      }
+
+      // ================================================================
+      // Location
+      // ================================================================
+
+      match /locations/{locId} {
+        allow read: if canReadAt(orgId, locId, ALL_ROLES());
+        // Creating, closing and reopening a location go through Functions.
+        allow update: if canWriteAt(orgId, locId, MANAGERS())
+          && !changedKeys().hasAny(['status', 'orgId', 'locationId', 'createdAt']);
+        allow create, delete: if false;
+
+        // Hours, tax, hardware (printer IPs, drawer), kitchen routing.
+        match /settings/{docId} {
+          allow read: if canReadAt(orgId, locId, ALL_ROLES());
+          allow create: if canWriteAt(orgId, locId, MANAGERS()) && tenantIdsMatch(orgId, locId);
+          allow update: if canWriteAt(orgId, locId, MANAGERS()) && protectedKeysUnchanged();
+          allow delete: if false;
+        }
+
+        // Availability and price overrides of the org menu at this store.
+        // Front-of-house roles may only flip `available` (sold out).
+        match /menuOverrides/{itemId} {
+          allow read: if canReadAt(orgId, locId, ALL_ROLES());
+          allow create: if tenantIdsMatch(orgId, locId)
+            && (canWriteAt(orgId, locId, MANAGERS())
+                || (canWriteAt(orgId, locId, SOLD_OUT_TOGGLERS())
+                    && incoming().keys().hasOnly(
+                        ['orgId', 'locationId', 'itemId', 'available', 'updatedAt', 'updatedBy'])));
+          allow update: if protectedKeysUnchanged()
+            && (canWriteAt(orgId, locId, MANAGERS())
+                || (canWriteAt(orgId, locId, SOLD_OUT_TOGGLERS())
+                    && changedKeys().hasOnly(['available', 'updatedAt', 'updatedBy'])));
+          allow delete: if canWriteAt(orgId, locId, MANAGERS());
+        }
+
+        // Per-location staff list, mirrored from memberships by Functions.
+        match /staff/{uid} {
+          allow read: if canReadAt(orgId, locId, MANAGERS());
+          allow write: if false;
+        }
+
+        // Devices are paired and revoked by Functions. A device may report
+        // its own health.
+        match /devices/{deviceId} {
+          allow read: if canReadAt(orgId, locId, MANAGERS())
+            || (isUser(deviceId) && canReadAt(orgId, locId, ['device']));
+          allow update: if isUser(deviceId)
+            && canWriteAt(orgId, locId, ['device'])
+            && changedKeys().hasOnly(['appVersion', 'lastSeenAt', 'printerStatus', 'health']);
+          allow create, delete: if false;
+        }
+
+        // ---------- Orders ----------
+
+        function validOrderState() {
+          return incoming().status in ['new', 'in_progress', 'ready', 'completed']
+            && incoming().paymentStatus in ['unpaid', 'paid'];
+        }
+
+        match /orders/{orderId} {
+          allow read: if canReadAt(orgId, locId, ORDER_READERS());
+
+          // Discounts need no manager PIN, so sellers may set them directly.
+          allow create: if canWriteAt(orgId, locId, SELLERS())
+            && tenantIdsMatch(orgId, locId)
+            && createdByCaller()
+            && validOrderState();
+
+          // Sellers edit open orders; once paid, items and money are frozen
+          // and corrections are voids or refunds through a Function.
+          // Kitchen staff may only move the prep status.
+          allow update: if protectedKeysUnchanged()
+            && !changedKeys().hasAny(['deviceId', 'idempotencyKey'])
+            && resource.data.status != 'voided'
+            && resource.data.paymentStatus in ['unpaid', 'paid']
+            && validOrderState()
+            && (
+              (canWriteAt(orgId, locId, SELLERS())
+                && (resource.data.paymentStatus == 'unpaid'
+                    || !changedKeys().hasAny(['items', 'totals', 'discounts', 'paymentStatus'])))
+              || (canWriteAt(orgId, locId, ['kitchen'])
+                && changedKeys().hasOnly(['status', 'updatedAt', 'updatedBy']))
+            );
+
+          allow delete: if false;
+
+          // Clients record cash only. Card payments, voids and refunds are
+          // written by the PaymentProvider Functions.
+          match /payments/{paymentId} {
+            allow read: if canReadAt(orgId, locId, PAYMENT_READERS());
+            allow create: if canWriteAt(orgId, locId, SELLERS())
+              && tenantIdsMatch(orgId, locId)
+              && createdByCaller()
+              && incoming().orderId == orderId
+              && incoming().method == 'cash'
+              && incoming().amount is number
+              && incoming().amount > 0;
+            allow update, delete: if false;
+          }
+        }
+
+        // ---------- Cash sessions ----------
+
+        function cashSession(sessionId) {
+          return get(/databases/$(database)/documents/orgs/$(orgId)/locations/$(locId)/cashSessions/$(sessionId)).data;
+        }
+
+        // Managers and accountants see every session; cashiers see their own;
+        // a device sees the sessions that are open at its location.
+        function canReadCashSession(session) {
+          return canReadAt(orgId, locId, MONEY_READERS())
+            || (canReadAt(orgId, locId, ['cashier']) && session.openedBy == request.auth.uid)
+            || (canReadAt(orgId, locId, ['device']) && session.status == 'open');
+        }
+
+        function canOperateCashSession(session) {
+          return session.status == 'open'
+            && (canWriteAt(orgId, locId, ['owner', 'franchise_owner', 'store_manager', 'device'])
+                || (canWriteAt(orgId, locId, ['cashier']) && session.openedBy == request.auth.uid));
+        }
+
+        match /cashSessions/{sessionId} {
+          allow read: if canReadCashSession(resource.data);
+          allow create: if canWriteAt(orgId, locId, SELLERS())
+            && tenantIdsMatch(orgId, locId)
+            && incoming().openedBy == request.auth.uid
+            && incoming().openedAt == request.time
+            && incoming().status == 'open';
+          // Only an open session can change, and only to record the count
+          // and close it. Adjusting a closed session is a Function.
+          allow update: if canOperateCashSession(resource.data)
+            && changedKeys().hasOnly(['status', 'countedCash', 'closedAt', 'closedBy', 'notes', 'updatedAt'])
+            && incoming().status in ['open', 'closed'];
+          allow delete: if false;
+
+          match /movements/{movementId} {
+            allow read: if canReadCashSession(cashSession(sessionId));
+            allow create: if canOperateCashSession(cashSession(sessionId))
+              && tenantIdsMatch(orgId, locId)
+              && createdByCaller()
+              && incoming().type in ['paid_in', 'paid_out', 'drop']
+              && incoming().amount is number;
+            allow update, delete: if false;
+          }
+        }
+
+        // ---------- Inventory ----------
+
+        match /inventoryItems/{itemId} {
+          allow read: if canReadAt(orgId, locId, INVENTORY_READERS());
+          allow create: if canWriteAt(orgId, locId, INVENTORY_EDITORS()) && tenantIdsMatch(orgId, locId);
+          allow update: if canWriteAt(orgId, locId, INVENTORY_EDITORS()) && protectedKeysUnchanged();
+          allow delete: if canWriteAt(orgId, locId, MANAGERS());
+        }
+
+        match /stockMovements/{movementId} {
+          allow read: if canReadAt(orgId, locId, INVENTORY_READERS());
+          allow create: if canWriteAt(orgId, locId, INVENTORY_EDITORS())
+            && tenantIdsMatch(orgId, locId)
+            && createdByCaller();
+          allow update, delete: if false;
+        }
+
+        match /purchaseOrders/{poId} {
+          allow read: if canReadAt(orgId, locId, INVENTORY_READERS());
+          allow create: if canWriteAt(orgId, locId, INVENTORY_EDITORS())
+            && tenantIdsMatch(orgId, locId)
+            && createdByCaller();
+          allow update: if canWriteAt(orgId, locId, INVENTORY_EDITORS()) && protectedKeysUnchanged();
+          allow delete: if false;
+        }
+
+        // ---------- Reports (written by Functions) ----------
+
+        match /reports/{reportId} {
+          allow read: if canReadAt(orgId, locId, MONEY_READERS())
+            || (canReadAt(orgId, locId, ['inventory_manager']) && resource.data.kind == 'inventory');
+          allow write: if false;
+        }
+      }
+    }
+  }
+}

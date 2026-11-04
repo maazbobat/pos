@@ -1,0 +1,13 @@
+{
+  "name": "pos-monorepo",
+  "private": true,
+  "workspaces": ["functions", "tests/rules"],
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build:functions": "npm run build -w functions",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-pos \"npm test -w tests/rules\""
+  },
+  "devDependencies": {
+    "firebase-tools": "^15.34.2"
+  }
+}

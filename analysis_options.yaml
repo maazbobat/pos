@@ -1,0 +1,7 @@
+# Root analyzer settings for `flutter analyze` run from the repo root.
+# Each package keeps its own lints in its own analysis_options.yaml.
+analyzer:
+  exclude:
+    - node_modules/**
+    - functions/**
+    - tests/**
