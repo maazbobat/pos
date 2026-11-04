@@ -22,7 +22,7 @@ jobs:
         run: dart test
 
   rules:
-    name: Firestore rules tests (emulator)
+    name: Rules and Functions tests (emulator)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +36,9 @@ jobs:
           java-version: 21
       - run: npm ci
       - run: npm run typecheck -w tests/rules
+      - run: npm run typecheck -w functions
       - run: npm run build:functions
       # Uses a demo- project ID, so the emulator can't reach a real project.
       - run: npm run test:rules
+      - name: Cloud Functions tests (Firestore + Auth emulators)
+        run: npm run test:functions
