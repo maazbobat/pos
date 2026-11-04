@@ -1,0 +1,13 @@
+name: pos_shared
+description: Tenant models, Firestore paths and role definitions shared by every app.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.13.7
+
+resolution: workspace
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.6
