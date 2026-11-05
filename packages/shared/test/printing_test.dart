@@ -27,8 +27,18 @@ Order _order({
       'kitchenStation': 'bar',
       'notes': 'less ice',
       'modifiers': [
-        {'groupId': 'size', 'optionId': 'l', 'name': 'Large', 'priceDeltaCents': 75},
-        {'groupId': 'top', 'optionId': 'b', 'name': 'Boba', 'priceDeltaCents': 0},
+        {
+          'groupId': 'size',
+          'optionId': 'l',
+          'name': 'Large',
+          'priceDeltaCents': 75,
+        },
+        {
+          'groupId': 'top',
+          'optionId': 'b',
+          'name': 'Boba',
+          'priceDeltaCents': 0,
+        },
       ],
     },
     {
@@ -100,61 +110,77 @@ void main() {
       final lines = b.build().preview().split('\n');
       expect(lines[0], r'Tea            $5.50');
       expect(lines[0].length, 20);
-      expect(lines.last.isEmpty ? lines[lines.length - 2] : lines.last, endsWith(r'$12.00'));
+      expect(
+        lines.last.isEmpty ? lines[lines.length - 2] : lines.last,
+        endsWith(r'$12.00'),
+      );
     });
   });
 
   group('receipt', () {
-    test('has the store, items with options, taxes, tip, cash change and footer', () {
-      final doc = receiptDoc(
-        order: _order(),
-        storeName: 'Maple Tea',
-        settings: const ReceiptSettings(
-          header: ['10 Main St, Cambridge ON'],
-          taxNumber: '123456789 RT0001',
-          footer: 'Merci!',
-        ),
-        payments: const [
-          ReceiptPayment(label: 'Cash', amountCents: 1752, tenderedCents: 2000),
-        ],
-        printedAt: DateTime(2026, 11, 5, 12, 4),
-        openDrawer: true,
-      );
-      final text = doc.preview();
-      for (final want in [
-        'MAPLE TEA',
-        '10 Main St, Cambridge ON',
-        'Order #417',
-        'Takeout',
-        '2026-11-05 12:03',
-        '2 x Taro milk tea',
-        r'Large +$0.75',
-        '"less ice"',
-        'Crème brûlée bun',
-        r'-$1.00',
-        'HST 13%',
-        r'$17.52',
-        r'Change',
-        r'$2.48',
-        'GST/HST: 123456789 RT0001',
-        'Merci!',
-      ]) {
-        expect(text, contains(want));
-      }
-      expect(doc.opensDrawer, isTrue);
-      expect(doc.ops.whereType<PrintCut>(), hasLength(1));
-      // Every line fits on 80 mm paper.
-      for (final op in doc.ops.whereType<PrintLine>()) {
-        expect(op.text.length, lessThanOrEqualTo(op.big ? 24 : 48), reason: op.text);
-      }
-    });
+    test(
+      'has the store, items with options, taxes, tip, cash change and footer',
+      () {
+        final doc = receiptDoc(
+          order: _order(),
+          storeName: 'Maple Tea',
+          settings: const ReceiptSettings(
+            header: ['10 Main St, Cambridge ON'],
+            taxNumber: '123456789 RT0001',
+            footer: 'Merci!',
+          ),
+          payments: const [
+            ReceiptPayment(
+              label: 'Cash',
+              amountCents: 1752,
+              tenderedCents: 2000,
+            ),
+          ],
+          printedAt: DateTime(2026, 11, 5, 12, 4),
+          openDrawer: true,
+        );
+        final text = doc.preview();
+        for (final want in [
+          'MAPLE TEA',
+          '10 Main St, Cambridge ON',
+          'Order #417',
+          'Takeout',
+          '2026-11-05 12:03',
+          '2 x Taro milk tea',
+          r'Large +$0.75',
+          '"less ice"',
+          'Crème brûlée bun',
+          r'-$1.00',
+          'HST 13%',
+          r'$17.52',
+          r'Change',
+          r'$2.48',
+          'GST/HST: 123456789 RT0001',
+          'Merci!',
+        ]) {
+          expect(text, contains(want));
+        }
+        expect(doc.opensDrawer, isTrue);
+        expect(doc.ops.whereType<PrintCut>(), hasLength(1));
+        // Every line fits on 80 mm paper.
+        for (final op in doc.ops.whereType<PrintLine>()) {
+          expect(
+            op.text.length,
+            lessThanOrEqualTo(op.big ? 24 : 48),
+            reason: op.text,
+          );
+        }
+      },
+    );
 
     test('shows the tip and the total paid on a card sale', () {
       final text = receiptDoc(
         order: _order(),
         storeName: 'Maple Tea',
         settings: const ReceiptSettings(),
-        payments: const [ReceiptPayment(label: 'Card', amountCents: 1752, tipCents: 250)],
+        payments: const [
+          ReceiptPayment(label: 'Card', amountCents: 1752, tipCents: 250),
+        ],
         printedAt: DateTime(2026, 11, 5),
       ).preview();
       expect(text, contains(r'$2.50'));
@@ -164,7 +190,11 @@ void main() {
 
     test('says NOT PAID and keeps online ticket numbers as they are', () {
       final text = receiptDoc(
-        order: _order(source: OrderSource.online, ticket: 'W-417', paid: PaymentStatus.unpaid),
+        order: _order(
+          source: OrderSource.online,
+          ticket: 'W-417',
+          paid: PaymentStatus.unpaid,
+        ),
         storeName: 'Maple Tea',
         settings: const ReceiptSettings(),
         payments: const [],
@@ -177,7 +207,9 @@ void main() {
 
   group('kitchen tickets', () {
     test('go to each kitchen printer with only its stations', () {
-      final settings = const HardwareSettings(printers: [_receiptPrinter, _bar, _kitchen]);
+      final settings = const HardwareSettings(
+        printers: [_receiptPrinter, _bar, _kitchen],
+      );
       final jobs = kitchenJobs(_order(), settings, DateTime(2026, 11, 5));
       expect(jobs.map((j) => j.printer.id), ['bar', 'kitchen']);
       final bar = jobs.first.doc.preview();
@@ -195,7 +227,10 @@ void main() {
     test('skip a printer with nothing for it', () {
       final settings = const HardwareSettings(printers: [_bar]);
       final o = Order.fromMap('o2', {
-        'ticket': '1', 'items': [{'name': 'Bun', 'qty': 1, 'kitchenStation': 'kitchen'}],
+        'ticket': '1',
+        'items': [
+          {'name': 'Bun', 'qty': 1, 'kitchenStation': 'kitchen'},
+        ],
       });
       expect(kitchenJobs(o, settings, DateTime(2026)), isEmpty);
     });
@@ -209,13 +244,40 @@ void main() {
         ..openDrawer();
       final bytes = encodeEscPos(b.build());
       expect(bytes.sublist(0, 5), [0x1b, 0x40, 0x1b, 0x74, 19]);
-      final line = [0x1b, 0x61, 1, 0x1b, 0x45, 1, 0x1d, 0x21, 0x11, 0x43, 0x61, 0x66, 0x82, 0x0a];
+      final line = [
+        0x1b,
+        0x61,
+        1,
+        0x1b,
+        0x45,
+        1,
+        0x1d,
+        0x21,
+        0x11,
+        0x43,
+        0x61,
+        0x66,
+        0x82,
+        0x0a,
+      ];
       expect(bytes.sublist(5, 5 + line.length), line);
-      expect(bytes.sublist(bytes.length - 9), [0x1d, 0x56, 0x42, 0x00, 0x1b, 0x70, 0x00, 0x19, 0xfa]);
+      expect(bytes.sublist(bytes.length - 9), [
+        0x1d,
+        0x56,
+        0x42,
+        0x00,
+        0x1b,
+        0x70,
+        0x00,
+        0x19,
+        0xfa,
+      ]);
     });
 
     test('turns smart quotes into ASCII and unknown characters into ?', () {
-      final bytes = encodeEscPos(PrintDoc(width: 48, ops: const [PrintLine('“Hi” — 茶')]));
+      final bytes = encodeEscPos(
+        PrintDoc(width: 48, ops: const [PrintLine('“Hi” — 茶')]),
+      );
       final text = bytes.sublist(14, bytes.length - 1);
       expect(latin1.decode(text), '"Hi" - ?');
     });
@@ -229,10 +291,23 @@ void main() {
         ..cut()
         ..openDrawer();
       final xml = encodeEposXml(b.build());
-      expect(xml, startsWith('<?xml version="1.0" encoding="utf-8"?><s:Envelope'));
+      expect(
+        xml,
+        startsWith('<?xml version="1.0" encoding="utf-8"?><s:Envelope'),
+      );
       expect(xml, contains('<epos-print xmlns="$eposNamespace">'));
-      expect(xml, contains('<text em="true" width="1" height="1">Tom &amp; Jerry &lt;3&#10;</text>'));
-      expect(xml, contains('<feed line="2"/><cut type="feed"/><pulse drawer="drawer_1" time="pulse_100"/>'));
+      expect(
+        xml,
+        contains(
+          '<text em="true" width="1" height="1">Tom &amp; Jerry &lt;3&#10;</text>',
+        ),
+      );
+      expect(
+        xml,
+        contains(
+          '<feed line="2"/><cut type="feed"/><pulse drawer="drawer_1" time="pulse_100"/>',
+        ),
+      );
     });
 
     test('builds the printer URL and reads its answer', () {
@@ -241,9 +316,12 @@ void main() {
         'http://192.168.1.50/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000',
       );
       expect(eposUri('printer.local', https: true).scheme, 'https');
-      const ok = '<s:Envelope><s:Body><response success="true" code="" status="251658262" xmlns="x"/></s:Body></s:Envelope>';
+      const ok =
+          '<s:Envelope><s:Body><response success="true" code="" status="251658262" xmlns="x"/></s:Body></s:Envelope>';
       expect(EposResponse.parse(ok).success, isTrue);
-      final paper = EposResponse.parse('<response success="false" code="EPTR_REC_EMPTY" status="0"/>');
+      final paper = EposResponse.parse(
+        '<response success="false" code="EPTR_REC_EMPTY" status="0"/>',
+      );
       expect(paper.success, isFalse);
       expect(paper.message, 'The printer is out of paper.');
       expect(EposResponse.parse('<html>').code, 'NO_RESPONSE');
@@ -257,7 +335,9 @@ void main() {
         receipt: ReceiptSettings(header: ['Line'], taxNumber: '1 RT0001'),
         autoPrintReceipt: true,
       );
-      final back = HardwareSettings.fromMap(jsonDecode(jsonEncode(s.toMap())) as Map<String, Object?>);
+      final back = HardwareSettings.fromMap(
+        jsonDecode(jsonEncode(s.toMap())) as Map<String, Object?>,
+      );
       expect(back.printers.map((p) => p.id), ['bar', 'front']);
       expect(back.printers.first.connection, PrinterConnection.raw);
       expect(back.printers.first.effectivePort, 9100);
@@ -272,19 +352,22 @@ void main() {
   });
 
   group('PrintService', () {
-    test('prints the receipt with the drawer kick on the same printer', () async {
-      final t = _FakeTransport();
-      final errors = await PrintService(t).receipt(
-        const HardwareSettings(printers: [_receiptPrinter]),
-        order: _order(),
-        storeName: 'Maple',
-        payments: const [ReceiptPayment(label: 'Cash', amountCents: 1752)],
-        openDrawer: true,
-      );
-      expect(errors, isEmpty);
-      expect(t.sent, hasLength(1));
-      expect(t.sent.single.$2.opensDrawer, isTrue);
-    });
+    test(
+      'prints the receipt with the drawer kick on the same printer',
+      () async {
+        final t = _FakeTransport();
+        final errors = await PrintService(t).receipt(
+          const HardwareSettings(printers: [_receiptPrinter]),
+          order: _order(),
+          storeName: 'Maple',
+          payments: const [ReceiptPayment(label: 'Cash', amountCents: 1752)],
+          openDrawer: true,
+        );
+        expect(errors, isEmpty);
+        expect(t.sent, hasLength(1));
+        expect(t.sent.single.$2.opensDrawer, isTrue);
+      },
+    );
 
     test('kicks a drawer on another printer separately, and reports failures without throwing', () async {
       final t = _FakeTransport()..failing.add('front');
@@ -303,7 +386,8 @@ void main() {
     });
 
     test('says so when there is no drawer', () async {
-      final errors = await PrintService(_FakeTransport()).openDrawer(const HardwareSettings());
+      final errors = await PrintService(_FakeTransport())
+          .openDrawer(const HardwareSettings());
       expect(errors.single.message, contains('No printer has a cash drawer'));
     });
   });

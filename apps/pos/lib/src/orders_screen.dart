@@ -97,9 +97,16 @@ class _OrderTile extends StatelessWidget {
       ),
     );
     if (done == null || !context.mounted) return;
-    messenger.showSnackBar(SnackBar(content: Text('Order ${order.ticket} paid by card.')));
+    messenger.showSnackBar(
+      SnackBar(content: Text('Order ${order.ticket} paid by card.')),
+    );
     if (hardware.autoPrintReceipt) {
-      await printReceipt(context, order: order, hardware: hardware, payments: [done.payment.toReceipt()]);
+      await printReceipt(
+        context,
+        order: order,
+        hardware: hardware,
+        payments: [done.payment.toReceipt()],
+      );
     }
   }
 
@@ -110,7 +117,13 @@ class _OrderTile extends StatelessWidget {
         if (p.status == CardPaymentStatus.succeeded) p.toReceipt(),
     ];
     if (!context.mounted) return;
-    await printReceipt(context, order: order, hardware: hardware, payments: paid, reprint: true);
+    await printReceipt(
+      context,
+      order: order,
+      hardware: hardware,
+      payments: paid,
+      reprint: true,
+    );
   }
 
   Future<void> _refund(BuildContext context) async {
@@ -122,7 +135,9 @@ class _OrderTile extends StatelessWidget {
     ];
     if (!context.mounted) return;
     if (refundable.isEmpty) {
-      messenger.showSnackBar(const SnackBar(content: Text('Nothing left to refund on this order.')));
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Nothing left to refund on this order.')),
+      );
       return;
     }
     final payment = refundable.length == 1
@@ -135,7 +150,9 @@ class _OrderTile extends StatelessWidget {
                 for (final p in refundable)
                   SimpleDialogOption(
                     onPressed: () => Navigator.of(c).pop(p),
-                    child: Text('${p.label} ${formatCad(p.amountCents + p.tipCents)}'),
+                    child: Text(
+                      '${p.label} ${formatCad(p.amountCents + p.tipCents)}',
+                    ),
                   ),
               ],
             ),
@@ -160,16 +177,19 @@ class _OrderTile extends StatelessWidget {
         idempotencyKey: newAttemptKey(),
         managerPin: approval.pin,
       );
-      messenger.showSnackBar(SnackBar(
-        key: const Key('refund-result'),
-        content: Text(switch (status) {
-          'succeeded' => 'Refunded ${formatCad(approval.amountCents!)}.',
-          'pending' => 'Refund sent. It can take a moment to show.',
-          _ => payment.provider == 'stripe_terminal'
-              ? 'The refund didn\'t go through. Interac debit is refunded with the card on the reader, from Stripe.'
-              : 'The refund didn\'t go through.',
-        }),
-      ));
+      messenger.showSnackBar(
+        SnackBar(
+          key: const Key('refund-result'),
+          content: Text(switch (status) {
+            'succeeded' => 'Refunded ${formatCad(approval.amountCents!)}.',
+            'pending' => 'Refund sent. It can take a moment to show.',
+            _ =>
+              payment.provider == 'stripe_terminal'
+                  ? 'The refund didn\'t go through. Interac debit is refunded with the card on the reader, from Stripe.'
+                  : 'The refund didn\'t go through.',
+          }),
+        ),
+      );
       if (status == 'succeeded' && payment.method == 'cash') {
         showPrintErrors(messenger, await printing.openDrawer(hardware));
       }
@@ -180,18 +200,30 @@ class _OrderTile extends StatelessWidget {
     final counter = BackendScope.of(context).counter;
     final approval = await showDialog<ManagerApproval>(
       context: context,
-      builder: (_) => ManagerApprovalDialog(title: 'Void #${order.ticket}', action: 'Void order'),
+      builder: (_) => ManagerApprovalDialog(
+        title: 'Void #${order.ticket}',
+        action: 'Void order',
+      ),
     );
     if (approval == null || !context.mounted) return;
     await _run(
       context,
-      () => counter.voidOrder(order, reason: approval.reason, managerPin: approval.pin),
+      () => counter.voidOrder(
+        order,
+        reason: approval.reason,
+        managerPin: approval.pin,
+      ),
     );
   }
 
   Future<void> _act(BuildContext context, _Action action) => switch (action) {
     _Action.receipt => _reprintReceipt(context),
-    _Action.kitchen => printKitchen(context, order: order, hardware: hardware, reprint: true),
+    _Action.kitchen => printKitchen(
+      context,
+      order: order,
+      hardware: hardware,
+      reprint: true,
+    ),
     _Action.refund => _refund(context),
     _Action.voidOrder => _void(context),
   };
@@ -223,10 +255,20 @@ class _OrderTile extends StatelessWidget {
     );
     if (!context.mounted) return;
     final payments = [
-      ReceiptPayment(label: 'Cash', amountCents: order.totals.totalCents, tenderedCents: tendered),
+      ReceiptPayment(
+        label: 'Cash',
+        amountCents: order.totals.totalCents,
+        tenderedCents: tendered,
+      ),
     ];
     if (hardware.autoPrintReceipt) {
-      await printReceipt(context, order: order, hardware: hardware, payments: payments, openDrawer: true);
+      await printReceipt(
+        context,
+        order: order,
+        hardware: hardware,
+        payments: payments,
+        openDrawer: true,
+      );
     } else if (hardware.drawerPrinter != null) {
       showPrintErrors(messenger, await printing.openDrawer(hardware));
     }
@@ -289,9 +331,15 @@ class _OrderTile extends StatelessWidget {
             onSelected: (a) => _act(context, a),
             itemBuilder: (_) => [
               if (hardware.receiptPrinter != null)
-                const PopupMenuItem(value: _Action.receipt, child: Text('Print receipt')),
+                const PopupMenuItem(
+                  value: _Action.receipt,
+                  child: Text('Print receipt'),
+                ),
               if (hardware.kitchenPrinters.isNotEmpty)
-                const PopupMenuItem(value: _Action.kitchen, child: Text('Print kitchen ticket')),
+                const PopupMenuItem(
+                  value: _Action.kitchen,
+                  child: Text('Print kitchen ticket'),
+                ),
               if (order.paymentStatus == PaymentStatus.paid ||
                   order.paymentStatus == PaymentStatus.partiallyRefunded)
                 const PopupMenuItem(

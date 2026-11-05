@@ -3,4 +3,7 @@ library;
 
 export 'src/firebase_backend.dart';
 export 'src/orders_backend.dart'
-    show FirebaseStorefrontBackend, FirestoreCounterBackend, FirestoreOrdersBackend;
+    show
+        FirebaseStorefrontBackend,
+        FirestoreCounterBackend,
+        FirestoreOrdersBackend;

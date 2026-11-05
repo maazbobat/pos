@@ -3,8 +3,7 @@ import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:pos_shared/pos_shared.dart';
 
-import 'raw_socket_stub.dart'
-    if (dart.library.io) 'raw_socket_io.dart' as raw;
+import 'raw_socket_stub.dart' if (dart.library.io) 'raw_socket_io.dart' as raw;
 
 /// Prints to network Epson printers: ePOS-Print XML over HTTP(S), or raw
 /// ESC/POS over TCP 9100 on Android.
@@ -29,11 +28,7 @@ class NetworkPrinterTransport implements PrinterTransport {
   }
 
   Future<void> _epos(PrinterConfig printer, PrintDoc doc) async {
-    final uri = eposUri(
-      printer.host,
-      https: printer.https,
-      port: printer.port,
-    );
+    final uri = eposUri(printer.host, https: printer.https, port: printer.port);
     final http.Response res;
     try {
       res = await _client
@@ -47,7 +42,10 @@ class NetworkPrinterTransport implements PrinterTransport {
           )
           .timeout(timeout);
     } on TimeoutException {
-      throw PrintException(printer.name, 'The printer didn\'t answer. Is it on and connected?');
+      throw PrintException(
+        printer.name,
+        'The printer didn\'t answer. Is it on and connected?',
+      );
     } catch (_) {
       throw PrintException(
         printer.name,
@@ -55,7 +53,10 @@ class NetworkPrinterTransport implements PrinterTransport {
       );
     }
     if (res.statusCode == 404) {
-      throw PrintException(printer.name, 'ePOS-Print isn\'t turned on in the printer\'s settings.');
+      throw PrintException(
+        printer.name,
+        'ePOS-Print isn\'t turned on in the printer\'s settings.',
+      );
     }
     final answer = EposResponse.parse(res.body);
     if (!answer.success) throw PrintException(printer.name, answer.message);

@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
 import 'app.dart';
+import 'counter_tab.dart';
 import 'devices_tab.dart';
 import 'menu_tab.dart';
 import 'online_tab.dart';
 import 'team_tab.dart';
 
-/// One store. Managers get Team, Devices and Online ordering; everyone with
+/// One store. Managers get Team, Devices, Online ordering and Counter
+/// (card readers, printers, receipts); everyone with
 /// a role here sees the menu (and owners and managers can change it).
 class LocationScreen extends StatefulWidget {
   const LocationScreen({super.key, required this.store});
@@ -30,6 +32,8 @@ class _LocationScreenState extends State<LocationScreen> {
       ('Menu', Icons.restaurant_menu, MenuTab(store: store)),
       if (store.isManager)
         ('Online', Icons.storefront_outlined, OnlineTab(store: store)),
+      if (store.isManager)
+        ('Counter', Icons.point_of_sale, CounterTab(store: store)),
     ];
     final index = _tab.clamp(0, tabs.length - 1);
     return Scaffold(

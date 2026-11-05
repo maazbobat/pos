@@ -48,8 +48,16 @@ class _MenuScreenState extends State<MenuScreen> {
     if (_subs.isNotEmpty) return;
     final counter = BackendScope.of(context).counter;
     _subs
-      ..add(counter.paymentSettings(device.orgId, device.locationId).listen((s) => setState(() => _payments = s)))
-      ..add(counter.hardware(device.orgId, device.locationId).listen((s) => setState(() => _hardware = s)));
+      ..add(
+        counter
+            .paymentSettings(device.orgId, device.locationId)
+            .listen((s) => setState(() => _payments = s)),
+      )
+      ..add(
+        counter
+            .hardware(device.orgId, device.locationId)
+            .listen((s) => setState(() => _hardware = s)),
+      );
   }
 
   @override
@@ -63,27 +71,41 @@ class _MenuScreenState extends State<MenuScreen> {
   PosOrderDraft _draft(Cart cart) => PosOrderDraft(
     orgId: device.orgId,
     locationId: device.locationId,
-    orderId: BackendScope.of(context).orders.newOrderId(device.orgId, device.locationId),
+    orderId: BackendScope.of(context).orders
+        .newOrderId(device.orgId, device.locationId),
     deviceId: device.deviceId,
     staffUid: widget.staff.uid,
     cart: cart,
   );
 
-  Order _orderOf(PosOrderDraft draft, PaymentStatus status) => Order.fromMap(draft.orderId, {
-    ...draft.toMap(createdBy: device.deviceId, paymentStatus: status),
-    'createdAt': DateTime.now(),
-  });
+  Order _orderOf(PosOrderDraft draft, PaymentStatus status) =>
+      Order.fromMap(draft.orderId, {
+        ...draft.toMap(createdBy: device.deviceId, paymentStatus: status),
+        'createdAt': DateTime.now(),
+      });
 
   /// After a sale: kitchen tickets, the drawer for cash, and the receipt
   /// (printed now, or offered on the confirmation).
-  void _afterSale(Order order, List<ReceiptPayment> payments, {required bool cash}) {
+  void _afterSale(
+    Order order,
+    List<ReceiptPayment> payments, {
+    required bool cash,
+  }) {
     final hw = _hardware;
     if (hw.autoPrintKitchen) printKitchen(context, order: order, hardware: hw);
     if (hw.autoPrintReceipt) {
-      printReceipt(context, order: order, hardware: hw, payments: payments, openDrawer: cash);
+      printReceipt(
+        context,
+        order: order,
+        hardware: hw,
+        payments: payments,
+        openDrawer: cash,
+      );
     } else if (cash && hw.drawerPrinter != null) {
       final messenger = ScaffoldMessenger.of(context);
-      BackendScope.printingOf(context).openDrawer(hw).then((e) => showPrintErrors(messenger, e));
+      BackendScope.printingOf(context)
+          .openDrawer(hw)
+          .then((e) => showPrintErrors(messenger, e));
     }
   }
 
@@ -93,7 +115,12 @@ class _MenuScreenState extends State<MenuScreen> {
       : SnackBarAction(
           key: const Key('print-receipt'),
           label: 'Print receipt',
-          onPressed: () => printReceipt(context, order: order, hardware: _hardware, payments: payments),
+          onPressed: () => printReceipt(
+            context,
+            order: order,
+            hardware: _hardware,
+            payments: payments,
+          ),
         );
 
   Future<void> _payCard() async {
@@ -119,9 +146,13 @@ class _MenuScreenState extends State<MenuScreen> {
     if (placed) _setCart(cart.clear());
     if (done == null) {
       if (placed) {
-        messenger.showSnackBar(SnackBar(
-          content: Text('Order ${draft.ticket} is saved as not paid. Take payment from Orders.'),
-        ));
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              'Order ${draft.ticket} is saved as not paid. Take payment from Orders.',
+            ),
+          ),
+        );
       }
       return;
     }
@@ -179,7 +210,11 @@ class _MenuScreenState extends State<MenuScreen> {
     final change = changeDue(cart.totals.totalCents, tendered) ?? 0;
     final order = _orderOf(draft, PaymentStatus.paid);
     final payments = [
-      ReceiptPayment(label: 'Cash', amountCents: cart.totals.totalCents, tenderedCents: tendered),
+      ReceiptPayment(
+        label: 'Cash',
+        amountCents: cart.totals.totalCents,
+        tenderedCents: tendered,
+      ),
     ];
     _afterSale(order, payments, cash: true);
     messenger.showSnackBar(

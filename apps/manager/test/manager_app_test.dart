@@ -356,4 +356,93 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('online-stripe')), findsOneWidget);
   });
+
+  testWidgets(
+    'a manager adds an Epson printer with the cash drawer and pairs a Stripe reader',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final fake = backendFor('mgr', role: Role.storeManager);
+      await openCambridge(tester, fake);
+      await tester.tap(find.text('Counter'));
+      await tester.pumpAndSettle();
+
+      // No Stripe account yet: readers wait for the owner.
+      expect(find.text('Connect Stripe first'), findsOneWidget);
+      expect(
+        tester
+            .widget<OutlinedButton>(find.byKey(const Key('add-reader')))
+            .onPressed,
+        isNull,
+      );
+
+      await tester.tap(find.byKey(const Key('add-printer')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('printer-name')),
+        'Front counter',
+      );
+      await tester.enterText(
+        find.byKey(const Key('printer-host')),
+        'not an ip!',
+      );
+      await tester.tap(find.byKey(const Key('printer-save')));
+      await tester.pump();
+      expect(find.textContaining('IP address, for example'), findsOneWidget);
+      await tester.enterText(
+        find.byKey(const Key('printer-host')),
+        '192.168.1.50',
+      );
+      await tester.tap(find.byKey(const Key('printer-drawer')));
+      await tester.tap(find.byKey(const Key('printer-save')));
+      await tester.pumpAndSettle();
+      final p = fake.counter.hardwareSettings.printers.single;
+      expect(p.id, 'front-counter');
+      expect(p.connection, PrinterConnection.epos);
+      expect(p.hasDrawer, isTrue);
+      expect(p.jobs, {PrinterJob.receipt});
+      expect(
+        find.textContaining('192.168.1.50 · ePOS · 80 mm'),
+        findsOneWidget,
+      );
+
+      await tester.enterText(
+        find.byKey(const Key('receipt-tax')),
+        '123456789 RT0001',
+      );
+      await tester.tap(find.byKey(const Key('receipt-save')));
+      await tester.pumpAndSettle();
+      expect(
+        fake.counter.hardwareSettings.receipt.taxNumber,
+        '123456789 RT0001',
+      );
+      expect(fake.counter.hardwareSettings.printers, hasLength(1));
+
+      fake.orders
+        ..online = const OnlineOrderingSettings(stripeAccountId: 'acct_maple')
+        ..notify();
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('add-reader')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('reader-line1')), findsOneWidget);
+      await tester.enterText(
+        find.byKey(const Key('reader-code')),
+        'Apple Grape Orange',
+      );
+      await tester.enterText(
+        find.byKey(const Key('reader-line1')),
+        '10 Main St',
+      );
+      await tester.enterText(find.byKey(const Key('reader-city')), 'Cambridge');
+      await tester.enterText(find.byKey(const Key('reader-postal')), 'N1R 5S2');
+      await tester.tap(find.byKey(const Key('reader-save')));
+      await tester.pumpAndSettle();
+      expect(
+        fake.counter.calls.last,
+        'register:front-counter:apple-grape-orange',
+      );
+      expect(find.text('Stripe Reader S700'), findsOneWidget);
+    },
+  );
 }

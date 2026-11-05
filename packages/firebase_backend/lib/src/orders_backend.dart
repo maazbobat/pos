@@ -265,10 +265,11 @@ class FirestoreCounterBackend implements CounterBackend {
   };
 
   @override
-  Stream<PaymentSettings> paymentSettings(String orgId, String locationId) => _db
-      .doc(FirestorePaths.settings(orgId, locationId, 'payments'))
-      .snapshots()
-      .map((s) => PaymentSettings.fromMap(s.data() ?? const {}));
+  Stream<PaymentSettings> paymentSettings(String orgId, String locationId) =>
+      _db
+          .doc(FirestorePaths.settings(orgId, locationId, 'payments'))
+          .snapshots()
+          .map((s) => PaymentSettings.fromMap(s.data() ?? const {}));
 
   @override
   Stream<HardwareSettings> hardware(String orgId, String locationId) => _db
@@ -284,16 +285,27 @@ class FirestoreCounterBackend implements CounterBackend {
   ) async {
     final ref = _db.doc(FirestorePaths.settings(orgId, locationId, 'hardware'));
     // Replace the printer map whole, so a removed printer goes away.
-    await ref.set({
-      'orgId': orgId,
-      'locationId': locationId,
-      ...settings.toMap(),
-      'updatedAt': FieldValue.serverTimestamp(),
-      'updatedBy': _auth.currentUser?.uid,
-    }, SetOptions(mergeFields: [
-      'orgId', 'locationId', 'printers', 'receipt', 'autoPrintReceipt',
-      'autoPrintKitchen', 'updatedAt', 'updatedBy',
-    ]));
+    await ref.set(
+      {
+        'orgId': orgId,
+        'locationId': locationId,
+        ...settings.toMap(),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'updatedBy': _auth.currentUser?.uid,
+      },
+      SetOptions(
+        mergeFields: [
+          'orgId',
+          'locationId',
+          'printers',
+          'receipt',
+          'autoPrintReceipt',
+          'autoPrintKitchen',
+          'updatedAt',
+          'updatedBy',
+        ],
+      ),
+    );
   }
 
   @override
@@ -325,28 +337,38 @@ class FirestoreCounterBackend implements CounterBackend {
   );
 
   @override
-  Future<CardPaymentState> refreshPayment(Order order, String paymentId) async =>
-      CardPaymentState.fromMap(
-        await _call(_fns, Callables.refreshPayment, {
-          ..._ids(order),
-          'paymentId': paymentId,
-        }),
-      );
+  Future<CardPaymentState> refreshPayment(
+    Order order,
+    String paymentId,
+  ) async => CardPaymentState.fromMap(
+    await _call(_fns, Callables.refreshPayment, {
+      ..._ids(order),
+      'paymentId': paymentId,
+    }),
+  );
 
   @override
-  Future<CardPaymentState> cancelCardPayment(Order order, String paymentId) async =>
-      CardPaymentState.fromMap(
-        await _call(_fns, Callables.cancelCardPayment, {
-          ..._ids(order),
-          'paymentId': paymentId,
-        }),
-      );
+  Future<CardPaymentState> cancelCardPayment(
+    Order order,
+    String paymentId,
+  ) async => CardPaymentState.fromMap(
+    await _call(_fns, Callables.cancelCardPayment, {
+      ..._ids(order),
+      'paymentId': paymentId,
+    }),
+  );
 
   @override
   Stream<List<OrderPayment>> payments(Order order) => _db
-      .collection(FirestorePaths.payments(order.orgId, order.locationId, order.id))
+      .collection(
+        FirestorePaths.payments(order.orgId, order.locationId, order.id),
+      )
       .snapshots()
-      .map((q) => [for (final d in q.docs) OrderPayment.fromMap(d.id, _plain(d.data()))]);
+      .map(
+        (q) => [
+          for (final d in q.docs) OrderPayment.fromMap(d.id, _plain(d.data())),
+        ],
+      );
 
   @override
   Future<String> refundPayment(
@@ -369,7 +391,11 @@ class FirestoreCounterBackend implements CounterBackend {
   }
 
   @override
-  Future<void> voidOrder(Order order, {required String reason, String? managerPin}) async {
+  Future<void> voidOrder(
+    Order order, {
+    required String reason,
+    String? managerPin,
+  }) async {
     await _call(_fns, Callables.voidOrder, {
       ..._ids(order),
       'reason': reason,

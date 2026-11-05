@@ -127,14 +127,18 @@ String encodeEposXml(PrintDoc doc) =>
 
 /// Where to POST [encodeEposXml]. `local_printer` is the printer's own
 /// device ID; the printer gives up after [timeoutMs].
-Uri eposUri(String host, {bool https = false, int? port, int timeoutMs = 10000}) =>
-    Uri(
-      scheme: https ? 'https' : 'http',
-      host: host,
-      port: port,
-      path: '/cgi-bin/epos/service.cgi',
-      queryParameters: {'devid': 'local_printer', 'timeout': '$timeoutMs'},
-    );
+Uri eposUri(
+  String host, {
+  bool https = false,
+  int? port,
+  int timeoutMs = 10000,
+}) => Uri(
+  scheme: https ? 'https' : 'http',
+  host: host,
+  port: port,
+  path: '/cgi-bin/epos/service.cgi',
+  queryParameters: {'devid': 'local_printer', 'timeout': '$timeoutMs'},
+);
 
 /// What the printer answered. [code] explains a failure, for example
 /// `EPTR_COVER_OPEN`, `EPTR_REC_EMPTY` (out of paper) or `EX_TIMEOUT`.
@@ -145,10 +149,15 @@ class EposResponse {
 
   static EposResponse parse(String body) {
     final tag = RegExp(r'<response\b[^>]*>').firstMatch(body)?.group(0);
-    if (tag == null) return const EposResponse(success: false, code: 'NO_RESPONSE');
+    if (tag == null) {
+      return const EposResponse(success: false, code: 'NO_RESPONSE');
+    }
     String? attr(String name) =>
         RegExp('$name="([^"]*)"').firstMatch(tag)?.group(1);
-    return EposResponse(success: attr('success') == 'true', code: attr('code') ?? '');
+    return EposResponse(
+      success: attr('success') == 'true',
+      code: attr('code') ?? '',
+    );
   }
 
   /// For staff: what to check at the printer.

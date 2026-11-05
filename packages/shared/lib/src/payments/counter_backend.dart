@@ -74,10 +74,13 @@ class CardPaymentState {
     CardPaymentStatus.canceled => 'Cancelled',
     CardPaymentStatus.pending => 'Waiting for the card',
     CardPaymentStatus.failed => switch (failureReason) {
-      'reader_offline' => 'The card reader is offline. Check its Wi-Fi or power.',
+      'reader_offline' =>
+        'The card reader is offline. Check its Wi-Fi or power.',
       'reader_busy' => 'The card reader is busy with another payment.',
       'insufficient_funds' => 'Declined: insufficient funds.',
-      'card_declined' || 'generic_decline' || 'do_not_honor' => 'The card was declined.',
+      'card_declined' ||
+      'generic_decline' ||
+      'do_not_honor' => 'The card was declined.',
       'expired_card' => 'The card has expired.',
       'incorrect_pin' || 'invalid_pin' => 'Wrong PIN.',
       'not_configured' => 'Card payments aren\'t set up at this location yet.',
@@ -124,15 +127,16 @@ class OrderPayment {
     tenderedCents: tenderedCents,
   );
 
-  factory OrderPayment.fromMap(String id, Map<String, Object?> d) => OrderPayment(
-    id: id,
-    method: d['method'] as String? ?? 'card',
-    provider: d['provider'] as String? ?? 'cash',
-    amountCents: (d['amountCents'] as num?)?.toInt() ?? 0,
-    tipCents: (d['tipCents'] as num?)?.toInt() ?? 0,
-    refundedCents: (d['refundedCents'] as num?)?.toInt() ?? 0,
-    status: CardPaymentStatus.fromWire(d['status'] as String?),
-  );
+  factory OrderPayment.fromMap(String id, Map<String, Object?> d) =>
+      OrderPayment(
+        id: id,
+        method: d['method'] as String? ?? 'card',
+        provider: d['provider'] as String? ?? 'cash',
+        amountCents: (d['amountCents'] as num?)?.toInt() ?? 0,
+        tipCents: (d['tipCents'] as num?)?.toInt() ?? 0,
+        refundedCents: (d['refundedCents'] as num?)?.toInt() ?? 0,
+        status: CardPaymentStatus.fromWire(d['status'] as String?),
+      );
 }
 
 /// Card payments, refunds, voids and the counter's hardware settings. Card
@@ -142,7 +146,11 @@ abstract interface class CounterBackend {
   Stream<HardwareSettings> hardware(String orgId, String locationId);
 
   /// Managers only (firestore.rules).
-  Future<void> saveHardware(String orgId, String locationId, HardwareSettings settings);
+  Future<void> saveHardware(
+    String orgId,
+    String locationId,
+    HardwareSettings settings,
+  );
 
   /// Writes the order unpaid and waits until the server has it, so a card
   /// payment can start on it. Card payments need a connection anyway.
@@ -174,7 +182,11 @@ abstract interface class CounterBackend {
     String? managerPin,
   });
 
-  Future<void> voidOrder(Order order, {required String reason, String? managerPin});
+  Future<void> voidOrder(
+    Order order, {
+    required String reason,
+    String? managerPin,
+  });
 
   /// Pairs a Stripe smart reader with a counter. Managers only. The street
   /// address is needed for the location's first reader.

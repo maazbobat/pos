@@ -49,8 +49,9 @@ they can't check item prices, which is why online orders are priced on the serve
   station filter. Tap to move a ticket along.
 - **Pause online orders** from the POS, kitchen display or manager app.
 
-Card payments on the POS keep using `startCardPayment` once a Clover or Stripe
-Terminal adapter is live; the button isn't shown until then.
+- **Card:** once a Stripe reader is paired, a Card button sends the total and
+  tip to the reader. Receipts, kitchen tickets and the cash drawer go through
+  Epson printers. See [counter.md](counter.md).
 
 ## Online ordering site (`apps/online`)
 
@@ -120,5 +121,5 @@ offline still has them when the tablets reconnect.
 
 Store hours on the ordering site, guest notifications by SMS or email (the
 progress page refreshes every 10 seconds), shared loyalty, cash drawer
-sessions on the POS, receipt printing, card payments at the counter, combos,
-and the Connect onboarding flow.
+sessions on the POS, combos, and the Connect onboarding flow. Counter
+cards and printing are in [counter.md](counter.md).

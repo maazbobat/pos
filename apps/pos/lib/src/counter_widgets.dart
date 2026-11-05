@@ -21,7 +21,10 @@ int tipFor(int totalCents, int percent) => (totalCents * percent + 50) ~/ 100;
 
 /// Shows print problems in a banner that stays until dismissed, so it
 /// doesn't hide the sale's confirmation (and the change due) or get lost.
-void showPrintErrors(ScaffoldMessengerState messenger, List<PrintException> errors) {
+void showPrintErrors(
+  ScaffoldMessengerState messenger,
+  List<PrintException> errors,
+) {
   if (errors.isEmpty) return;
   messenger
     ..clearMaterialBanners()
@@ -70,14 +73,18 @@ Future<void> printKitchen(
   bool reprint = false,
 }) async {
   final messenger = ScaffoldMessenger.of(context);
-  final errors = await BackendScope.printingOf(context).kitchen(hardware, order, reprint: reprint);
+  final errors = await BackendScope.printingOf(context)
+      .kitchen(hardware, order, reprint: reprint);
   showPrintErrors(messenger, errors);
 }
 
 Future<String> _storeName(BuildContext context, Order order) async {
   final data = BackendScope.of(context).data;
   try {
-    final loc = await data.location(order.orgId, order.locationId).first.timeout(const Duration(seconds: 2));
+    final loc = await data
+        .location(order.orgId, order.locationId)
+        .first
+        .timeout(const Duration(seconds: 2));
     return loc?.name ?? '';
   } catch (_) {
     return '';
@@ -160,7 +167,8 @@ class _CardPaymentDialogState extends State<CardPaymentDialog> {
     final state = _state;
     if (order == null || state == null || state.status.done) return;
     try {
-      final next = await BackendScope.of(context).counter.refreshPayment(order, state.paymentId);
+      final next = await BackendScope.of(context).counter
+          .refreshPayment(order, state.paymentId);
       if (mounted) _update(next);
     } catch (_) {
       // A missed poll is fine; the next one or the server's recovery job catches up.
@@ -194,7 +202,10 @@ class _CardPaymentDialogState extends State<CardPaymentDialog> {
     if (order == null || state == null) return;
     setState(() => _busy = true);
     try {
-      _update(await BackendScope.of(context).counter.cancelCardPayment(order, state.paymentId));
+      _update(
+        await BackendScope.of(context).counter
+            .cancelCardPayment(order, state.paymentId),
+      );
     } catch (e) {
       if (mounted) setState(() => _error = errorText(e));
     } finally {
@@ -212,7 +223,10 @@ class _CardPaymentDialogState extends State<CardPaymentDialog> {
   Widget build(BuildContext context) {
     final state = _state;
     final waiting = state != null && !state.status.done;
-    final failed = state != null && state.status.done && state.status != CardPaymentStatus.succeeded;
+    final failed =
+        state != null &&
+        state.status.done &&
+        state.status != CardPaymentStatus.succeeded;
     final total = widget.totalCents + _tipCents;
 
     final Widget body;
@@ -229,7 +243,10 @@ class _CardPaymentDialogState extends State<CardPaymentDialog> {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 8),
-          Text(formatCad(total), style: Theme.of(context).textTheme.headlineMedium),
+          Text(
+            formatCad(total),
+            style: Theme.of(context).textTheme.headlineMedium,
+          ),
         ],
       );
       actions = [
@@ -271,7 +288,9 @@ class _CardPaymentDialogState extends State<CardPaymentDialog> {
               for (final p in tipPercents)
                 ChoiceChip(
                   key: Key('tip-$p'),
-                  label: Text('$p% · ${formatCad(tipFor(widget.totalCents, p))}'),
+                  label: Text(
+                    '$p% · ${formatCad(tipFor(widget.totalCents, p))}',
+                  ),
                   selected: _tipPercent == p,
                   onSelected: (_) => setState(() => _tipPercent = p),
                 ),
@@ -284,19 +303,26 @@ class _CardPaymentDialogState extends State<CardPaymentDialog> {
               initialValue: _reader,
               decoration: const InputDecoration(labelText: 'Card reader'),
               items: [
-                for (final r in widget.readers) DropdownMenuItem(value: r, child: Text(r.name)),
+                for (final r in widget.readers)
+                  DropdownMenuItem(value: r, child: Text(r.name)),
               ],
               onChanged: (r) => setState(() => _reader = r ?? _reader),
             ),
           ],
           if (_error case final e?) ...[
             const SizedBox(height: 12),
-            Text(e, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            Text(
+              e,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
           ],
         ],
       );
       actions = [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Back')),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Back'),
+        ),
         FilledButton(
           key: const Key('card-charge'),
           onPressed: _busy ? null : _charge,
@@ -318,7 +344,11 @@ class _CardPaymentDialogState extends State<CardPaymentDialog> {
 
 /// A manager's approval on the tablet: their PIN and a reason.
 class ManagerApproval {
-  const ManagerApproval({required this.pin, required this.reason, this.amountCents});
+  const ManagerApproval({
+    required this.pin,
+    required this.reason,
+    this.amountCents,
+  });
   final String pin;
   final String reason;
   final int? amountCents;
@@ -346,7 +376,9 @@ class _ManagerApprovalDialogState extends State<ManagerApprovalDialog> {
   final _reason = TextEditingController();
   final _pin = TextEditingController();
   late final _amount = TextEditingController(
-    text: widget.maxRefundCents == null ? '' : formatCad(widget.maxRefundCents!).substring(1),
+    text: widget.maxRefundCents == null
+        ? ''
+        : formatCad(widget.maxRefundCents!).substring(1),
   );
   String? _error;
 
@@ -377,7 +409,8 @@ class _ManagerApprovalDialogState extends State<ManagerApprovalDialog> {
       setState(() => _error = 'A manager types their PIN.');
       return;
     }
-    Navigator.of(context).pop(ManagerApproval(pin: pin, reason: reason, amountCents: amount));
+    Navigator.of(context)
+        .pop(ManagerApproval(pin: pin, reason: reason, amountCents: amount));
   }
 
   @override
@@ -393,7 +426,9 @@ class _ManagerApprovalDialogState extends State<ManagerApprovalDialog> {
               TextField(
                 key: const Key('approval-amount'),
                 controller: _amount,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 decoration: InputDecoration(
                   labelText: 'Amount',
                   prefixText: r'$',
@@ -416,13 +451,19 @@ class _ManagerApprovalDialogState extends State<ManagerApprovalDialog> {
             if (_error case final e?)
               Padding(
                 padding: const EdgeInsets.only(top: 12),
-                child: Text(e, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                child: Text(
+                  e,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
               ),
           ],
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Back')),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Back'),
+        ),
         FilledButton(
           key: const Key('approval-submit'),
           onPressed: _submit,

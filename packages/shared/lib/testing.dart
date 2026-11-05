@@ -730,7 +730,11 @@ class FakeCounter implements CounterBackend {
       _changes.watch(() => hardwareSettings);
 
   @override
-  Future<void> saveHardware(String orgId, String locationId, HardwareSettings s) async {
+  Future<void> saveHardware(
+    String orgId,
+    String locationId,
+    HardwareSettings s,
+  ) async {
     calls.add('hardware:${s.printers.length}');
     hardwareSettings = s;
     notify();
@@ -738,9 +742,15 @@ class FakeCounter implements CounterBackend {
 
   @override
   Future<void> placeUnpaidOrder(PosOrderDraft draft) async {
-    final data = draft.toMap(createdBy: 'device', paymentStatus: PaymentStatus.unpaid);
+    final data = draft.toMap(
+      createdBy: 'device',
+      paymentStatus: PaymentStatus.unpaid,
+    );
     orders.placed.add(data);
-    orders.orders[draft.orderId] = Order.fromMap(draft.orderId, {...data, 'createdAt': orders.now});
+    orders.orders[draft.orderId] = Order.fromMap(draft.orderId, {
+      ...data,
+      'createdAt': orders.now,
+    });
     orders.notify();
   }
 
@@ -766,31 +776,49 @@ class FakeCounter implements CounterBackend {
     failNextWith = null;
     final state = CardPaymentState(
       paymentId: id,
-      status: fail == null ? CardPaymentStatus.pending : CardPaymentStatus.failed,
+      status: fail == null
+          ? CardPaymentStatus.pending
+          : CardPaymentStatus.failed,
       failureReason: fail,
     );
     charges[id] = state;
-    (paymentsByOrder[order.id] ??= []).add(OrderPayment(
-      id: id, method: 'card', provider: 'stripe_terminal', amountCents: amountCents,
-      tipCents: tipCents, status: state.status,
-    ));
+    (paymentsByOrder[order.id] ??= []).add(
+      OrderPayment(
+        id: id,
+        method: 'card',
+        provider: 'stripe_terminal',
+        amountCents: amountCents,
+        tipCents: tipCents,
+        status: state.status,
+      ),
+    );
     notify();
     return state;
   }
 
   /// The guest at the reader: approve or decline the pending charge.
   void settle(String paymentId, CardPaymentStatus status, {String? reason}) {
-    charges[paymentId] = CardPaymentState(paymentId: paymentId, status: status, failureReason: reason);
+    charges[paymentId] = CardPaymentState(
+      paymentId: paymentId,
+      status: status,
+      failureReason: reason,
+    );
     for (final entry in paymentsByOrder.entries) {
       final list = entry.value;
       for (var i = 0; i < list.length; i++) {
         final p = list[i];
         if (p.id != paymentId) continue;
         list[i] = OrderPayment(
-          id: p.id, method: p.method, provider: p.provider, amountCents: p.amountCents,
-          tipCents: p.tipCents, status: status,
+          id: p.id,
+          method: p.method,
+          provider: p.provider,
+          amountCents: p.amountCents,
+          tipCents: p.tipCents,
+          status: status,
         );
-        if (status == CardPaymentStatus.succeeded) _setPaid(entry.key, PaymentStatus.paid);
+        if (status == CardPaymentStatus.succeeded) {
+          _setPaid(entry.key, PaymentStatus.paid);
+        }
       }
     }
     notify();
@@ -803,7 +831,10 @@ class FakeCounter implements CounterBackend {
   }
 
   @override
-  Future<CardPaymentState> cancelCardPayment(Order order, String paymentId) async {
+  Future<CardPaymentState> cancelCardPayment(
+    Order order,
+    String paymentId,
+  ) async {
     calls.add('cancel:$paymentId');
     if (charges[paymentId]?.status == CardPaymentStatus.pending) {
       settle(paymentId, CardPaymentStatus.canceled);
@@ -815,17 +846,25 @@ class FakeCounter implements CounterBackend {
   Stream<List<OrderPayment>> payments(Order order) => _changes.watch(() {
     final list = [...?paymentsByOrder[order.id]];
     if (list.isEmpty && order.paymentStatus != PaymentStatus.unpaid) {
-      list.add(OrderPayment(
-        id: cashPaymentIdFor(order.id), method: 'cash', provider: 'cash',
-        amountCents: order.totals.totalCents, status: CardPaymentStatus.succeeded,
-      ));
+      list.add(
+        OrderPayment(
+          id: cashPaymentIdFor(order.id),
+          method: 'cash',
+          provider: 'cash',
+          amountCents: order.totals.totalCents,
+          status: CardPaymentStatus.succeeded,
+        ),
+      );
     }
     return list;
   });
 
   void _checkPin(String? pin) {
     if (pin != null && pin != managerPin) {
-      throw const BackendException('permission-denied', 'That PIN isn\'t a manager\'s.');
+      throw const BackendException(
+        'permission-denied',
+        'That PIN isn\'t a manager\'s.',
+      );
     }
   }
 
@@ -845,7 +884,11 @@ class FakeCounter implements CounterBackend {
   }
 
   @override
-  Future<void> voidOrder(Order order, {required String reason, String? managerPin}) async {
+  Future<void> voidOrder(
+    Order order, {
+    required String reason,
+    String? managerPin,
+  }) async {
     _checkPin(managerPin);
     calls.add('void:${order.id}:$reason');
     final o = orders.orders[order.id] ?? order;
@@ -866,7 +909,10 @@ class FakeCounter implements CounterBackend {
   }) async {
     calls.add('register:$readerId:$registrationCode');
     final reader = CardReader(id: readerId, name: name, model: 'stripe_s700');
-    settings = PaymentSettings(cardProvider: 'stripe_terminal', readers: [...settings.readers, reader]);
+    settings = PaymentSettings(
+      cardProvider: 'stripe_terminal',
+      readers: [...settings.readers, reader],
+    );
     notify();
     return reader;
   }

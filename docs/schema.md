@@ -28,7 +28,7 @@ orgs/{orgId}                         name, type, status, accessLevel, plan
   reports/{reportId}                 cross-location rollups (Functions only)
 
   locations/{locationId}             name, status, timezone, province
-    settings/{hours | tax | hardware | kitchenRouting | payments}
+    settings/{hours | tax | hardware | kitchenRouting | payments}   hardware: printers, receipt; payments: card readers (docs/counter.md)
     settings/onlineOrdering          web address, pause, payment options (Functions only)
     settings/delivery_{aggregator}   linked delivery store (Functions only)
     menuOverrides/{itemId}           available, price

@@ -195,7 +195,10 @@ class HardwareSettings {
     return HardwareSettings(
       printers: [
         for (final e in printers.entries)
-          PrinterConfig.fromMap(e.key, Map<String, Object?>.from(e.value as Map)),
+          PrinterConfig.fromMap(
+            e.key,
+            Map<String, Object?>.from(e.value as Map),
+          ),
       ]..sort((a, b) => a.name.compareTo(b.name)),
       receipt: ReceiptSettings.fromMap(
         Map<String, Object?>.from((d['receipt'] as Map?) ?? {}),
@@ -243,12 +246,15 @@ String _fulfillment(Fulfillment f) => switch (f) {
 };
 
 /// POS tickets are digits ("417"); online ones already read "W-417".
-String _ticketLabel(Order o) =>
-    RegExp(r'^\d+$').hasMatch(o.ticket) ? 'Order #${o.ticket}' : 'Order ${o.ticket}';
+String _ticketLabel(Order o) => RegExp(r'^\d+$').hasMatch(o.ticket)
+    ? 'Order #${o.ticket}'
+    : 'Order ${o.ticket}';
 
 String _percent(double rate) {
   final p = rate * 100;
-  return p == p.roundToDouble() ? '${p.round()}%' : '${p.toStringAsFixed(3).replaceFirst(RegExp(r'0+$'), '')}%';
+  return p == p.roundToDouble()
+      ? '${p.round()}%'
+      : '${p.toStringAsFixed(3).replaceFirst(RegExp(r'0+$'), '')}%';
 }
 
 /// The guest receipt. [printedAt] is local time at the store.
@@ -278,7 +284,9 @@ PrintDoc receiptDoc({
     b.row('${l.qty} x ${l.name}', formatCad(l.lineTotalCents));
     for (final m in l.modifiers) {
       b.text(
-        m.priceDeltaCents == 0 ? m.name : '${m.name} ${m.priceDeltaCents > 0 ? '+' : ''}${formatCad(m.priceDeltaCents)}',
+        m.priceDeltaCents == 0
+            ? m.name
+            : '${m.name} ${m.priceDeltaCents > 0 ? '+' : ''}${formatCad(m.priceDeltaCents)}',
         indent: 4,
       );
     }
@@ -347,7 +355,14 @@ PrintDoc? kitchenTicketDoc({
     OrderSource.delivery => order.channel ?? 'Delivery',
   };
   final b = PrintDocBuilder(printer.charsPerLine)
-    ..row(RegExp(r'^\d+$').hasMatch(order.ticket) ? '#${order.ticket}' : order.ticket, _fulfillment(order.fulfillment), bold: true, big: true)
+    ..row(
+      RegExp(r'^\d+$').hasMatch(order.ticket)
+          ? '#${order.ticket}'
+          : order.ticket,
+      _fulfillment(order.fulfillment),
+      bold: true,
+      big: true,
+    )
     ..text('${_when(order.createdAt ?? printedAt)}  $source');
   if (order.customer case final c?) b.text(c.name, bold: true);
   if (order.pickupAt case final p?) b.text('Pickup ${_when(p)}', bold: true);
@@ -366,7 +381,9 @@ PrintDoc? kitchenTicketDoc({
       ..text('Note: $n', bold: true);
   }
   if (lines.length < order.items.length) {
-    b.text('(${order.items.length - lines.length} more item(s) at other stations)');
+    b.text(
+      '(${order.items.length - lines.length} more item(s) at other stations)',
+    );
   }
   b
     ..feed(3)
@@ -390,7 +407,12 @@ List<PrintJobFor> kitchenJobs(
   bool reprint = false,
 }) => [
   for (final p in settings.kitchenPrinters)
-    if (kitchenTicketDoc(order: order, printer: p, printedAt: printedAt, reprint: reprint)
+    if (kitchenTicketDoc(
+          order: order,
+          printer: p,
+          printedAt: printedAt,
+          reprint: reprint,
+        )
         case final doc?)
       PrintJobFor(p, doc),
 ];
