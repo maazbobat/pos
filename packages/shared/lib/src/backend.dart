@@ -1,3 +1,4 @@
+import 'commercial.dart';
 import 'menu/menu_models.dart';
 import 'models/device.dart';
 import 'models/location.dart';
@@ -173,8 +174,12 @@ class Backend {
     required this.auth,
     required this.functions,
     required this.data,
+    required this.billing,
+    required this.platform,
   });
   final AuthGateway auth;
   final OnboardingFunctions functions;
   final TenantData data;
+  final BillingBackend billing;
+  final PlatformBackend platform;
 }

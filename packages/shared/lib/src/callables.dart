@@ -26,4 +26,25 @@ abstract final class Callables {
   // Staff PIN on a paired device
   static const setStaffPin = 'setStaffPin';
   static const startStaffSession = 'startStaffSession';
+
+  // Support access and tenant status (platform admin)
+  static const grantSupportAccess = 'grantSupportAccess';
+  static const revokeSupportAccess = 'revokeSupportAccess';
+  static const setOrgStatus = 'setOrgStatus';
+
+  // Billing
+  static const startCheckout = 'startCheckout';
+  static const openBillingPortal = 'openBillingPortal';
+  static const setManualPlan = 'setManualPlan';
+  static const extendTrial = 'extendTrial';
+
+  // Card payments, refunds and voids
+  static const startCardPayment = 'startCardPayment';
+  static const refreshPayment = 'refreshPayment';
+  static const cancelCardPayment = 'cancelCardPayment';
+  static const refundPayment = 'refundPayment';
+  static const voidOrder = 'voidOrder';
+
+  // Monitoring
+  static const resolveIncident = 'resolveIncident';
 }
