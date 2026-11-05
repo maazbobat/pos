@@ -48,7 +48,7 @@ npx firebase emulators:start --only auth,firestore,functions --project demo-pos
 FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 npm run seed:dev
 (cd apps/admin && flutter run -d chrome)     # sign in as admin@demo.test / demo-admin
 (cd apps/manager && flutter run -d chrome)   # the owner accepts the invite link here
-(cd apps/pos && flutter run)                 # add --dart-define=EMULATOR_HOST=10.0.2.2 on an Android emulator
+(cd apps/pos && flutter run -d chrome)       # or a tablet; add --dart-define=EMULATOR_HOST=10.0.2.2 on an Android emulator
 ```
 
 Flow: create a restaurant in admin, accept the owner link in manager, add a
