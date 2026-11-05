@@ -319,4 +319,41 @@ void main() {
     await tester.pumpAndSettle();
     expect(fake.functions.calls, ['createLocation:org-a:Waterloo:ON']);
   });
+
+  testWidgets('a manager turns on online ordering with a web address', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 2000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final fake = backendFor('mgr', role: Role.storeManager);
+    await openCambridge(tester, fake);
+    await tester.tap(find.text('Online'));
+    await tester.pumpAndSettle();
+    final slug = tester.widget<TextField>(find.byKey(const Key('online-slug')));
+    expect(slug.controller!.text, 'maple-tea-co-cambridge');
+    expect(find.byKey(const Key('online-stripe')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('online-enabled')));
+    await tester.pumpAndSettle();
+    expect(fake.orders.calls, [
+      'online:enabled=true,slug=maple-tea-co-cambridge',
+    ]);
+    expect(find.textContaining('/#/maple-tea-co-cambridge'), findsWidgets);
+
+    await tester.tap(find.byKey(const Key('online-paused')));
+    await tester.pumpAndSettle();
+    expect(fake.orders.calls.last, 'online:paused=true');
+  });
+
+  testWidgets('only the owner sees the Stripe account field', (tester) async {
+    tester.view.physicalSize = const Size(1200, 2000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final fake = backendFor('own', owner: true);
+    await openCambridge(tester, fake);
+    await tester.tap(find.text('Online'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('online-stripe')), findsOneWidget);
+  });
 }

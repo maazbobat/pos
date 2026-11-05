@@ -29,6 +29,9 @@ jobs:
       - name: Admin widget tests
         working-directory: apps/admin
         run: flutter test
+      - name: Ordering site widget tests
+        working-directory: apps/online
+        run: flutter test
 
   rules:
     name: Rules and Functions tests (emulator)

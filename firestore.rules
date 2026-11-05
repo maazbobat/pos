@@ -214,6 +214,19 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Online ordering and delivery lookups: a store's web address, and an
+    // aggregator's store ID, to the org and location (Functions only). The
+    // ordering site reads stores through the getStorefront Function.
+    match /storefronts/{slug} {
+      allow read, write: if false;
+    }
+    match /deliveryStores/{key} {
+      allow read, write: if false;
+    }
+    match /deliveryEvents/{key} {
+      allow read, write: if false;
+    }
+
     // Stripe customer-to-org links and processed webhook events (Functions only).
     match /stripeCustomers/{customerId} {
       allow read, write: if false;
@@ -401,10 +414,15 @@ service cloud.firestore {
         allow create, delete: if false;
 
         // Hours, tax, hardware (printer IPs, drawer), kitchen routing.
+        // onlineOrdering holds the store's public web address and Stripe
+        // account, and delivery_* its delivery store links, so those go
+        // through Functions that keep them unique and audited.
         match /settings/{docId} {
           allow read: if canReadAt(orgId, locId, ALL_ROLES());
-          allow create: if canWriteAt(orgId, locId, MANAGERS()) && tenantIdsMatch(orgId, locId);
-          allow update: if canWriteAt(orgId, locId, MANAGERS()) && protectedKeysUnchanged();
+          allow create: if canWriteAt(orgId, locId, MANAGERS()) && tenantIdsMatch(orgId, locId)
+            && docId != 'onlineOrdering' && !docId.matches('delivery_.*');
+          allow update: if canWriteAt(orgId, locId, MANAGERS()) && protectedKeysUnchanged()
+            && docId != 'onlineOrdering' && !docId.matches('delivery_.*');
           allow delete: if false;
         }
 
@@ -458,10 +476,52 @@ service cloud.firestore {
         }
 
         // ---------- Orders ----------
+        // Shape and money checks for what the POS writes (docs/orders.md).
+        // Online and delivery orders are created and priced by Functions;
+        // staff can only move their status and take payment at pickup.
 
-        function validOrderState() {
-          return incoming().status in ['new', 'in_progress', 'ready', 'completed']
-            && incoming().paymentStatus in ['unpaid', 'paid'];
+        function CLIENT_STATUSES() {
+          return ['new', 'in_progress', 'ready', 'completed'];
+        }
+
+        function ORDER_KEYS() {
+          return ['orgId', 'locationId', 'source', 'ticket', 'status', 'paymentStatus',
+                  'fulfillment', 'items', 'totals', 'discounts', 'notes',
+                  'createdBy', 'createdAt', 'deviceId', 'staffUid', 'idempotencyKey',
+                  'updatedAt', 'updatedBy'];
+        }
+
+        function isCentsAmount(v) {
+          return v is int && v >= 0 && v <= 10000000;
+        }
+
+        // Totals add up: total = subtotal - discount + tax, all whole cents.
+        function validTotals(t) {
+          return t is map
+            && t.keys().hasOnly(['subtotalCents', 'discountCents', 'taxCents', 'totalCents', 'taxes'])
+            && isCentsAmount(t.subtotalCents)
+            && isCentsAmount(t.discountCents)
+            && isCentsAmount(t.taxCents)
+            && isCentsAmount(t.totalCents)
+            && t.discountCents <= t.subtotalCents
+            && t.totalCents == t.subtotalCents - t.discountCents + t.taxCents
+            && (!('taxes' in t) || (t.taxes is list && t.taxes.size() <= 5));
+        }
+
+        function validPosOrder(d) {
+          return d.keys().hasOnly(ORDER_KEYS())
+            && d.source == 'pos'
+            && d.ticket is string && d.ticket.size() > 0 && d.ticket.size() <= 12
+            && d.status in CLIENT_STATUSES()
+            && d.paymentStatus in ['unpaid', 'paid']
+            && d.fulfillment in ['here', 'takeout']
+            && d.items is list && d.items.size() >= 1 && d.items.size() <= 100
+            && d.discounts is list && d.discounts.size() <= 5
+            && validTotals(d.totals)
+            && (d.deviceId == null || d.deviceId == request.auth.uid)
+            && (!('staffUid' in d) || d.staffUid == null || d.staffUid is string)
+            && (!('notes' in d) || d.notes == null || (d.notes is string && d.notes.size() <= 300))
+            && d.idempotencyKey is string && d.idempotencyKey.size() <= 100;
         }
 
         match /orders/{orderId} {
@@ -471,20 +531,30 @@ service cloud.firestore {
           allow create: if canWriteAt(orgId, locId, SELLERS())
             && tenantIdsMatch(orgId, locId)
             && createdByCaller()
-            && validOrderState();
+            && validPosOrder(incoming());
 
-          // Sellers edit open orders; once paid, items and money are frozen
-          // and corrections are voids or refunds through a Function.
+          // Sellers edit open POS orders; once paid, items and money are
+          // frozen and corrections are voids or refunds through a Function.
+          // Online and delivery orders keep the server's prices, so staff
+          // only move their status and record payment at pickup. An online
+          // order waiting for its card payment can't be touched at all.
           // Kitchen staff may only move the prep status.
           allow update: if protectedKeysUnchanged()
-            && !changedKeys().hasAny(['deviceId', 'idempotencyKey'])
-            && resource.data.status != 'voided'
+            && resource.data.status in CLIENT_STATUSES()
+            && incoming().status in CLIENT_STATUSES()
             && resource.data.paymentStatus in ['unpaid', 'paid']
-            && validOrderState()
+            && incoming().paymentStatus in ['unpaid', 'paid']
             && (
               (canWriteAt(orgId, locId, SELLERS())
-                && (resource.data.paymentStatus == 'unpaid'
-                    || !changedKeys().hasAny(['items', 'totals', 'discounts', 'paymentStatus'])))
+                && (resource.data.get('source', 'pos') == 'pos'
+                  ? changedKeys().hasOnly(['status', 'paymentStatus', 'items', 'totals', 'discounts',
+                                           'fulfillment', 'notes', 'staffUid', 'updatedAt', 'updatedBy'])
+                    && validPosOrder(incoming())
+                    && (resource.data.paymentStatus == 'unpaid'
+                        || !changedKeys().hasAny(['items', 'totals', 'discounts', 'paymentStatus']))
+                  : changedKeys().hasOnly(['status', 'paymentStatus', 'staffUid', 'updatedAt', 'updatedBy'])
+                    && (resource.data.paymentStatus == 'unpaid'
+                        || !changedKeys().hasAny(['paymentStatus']))))
               || (canWriteAt(orgId, locId, ['kitchen'])
                 && changedKeys().hasOnly(['status', 'updatedAt', 'updatedBy']))
             );

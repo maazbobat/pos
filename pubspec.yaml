@@ -8,5 +8,6 @@ workspace:
   - apps/pos
   - apps/manager
   - apps/admin
+  - apps/online
   - packages/shared
   - packages/firebase_backend

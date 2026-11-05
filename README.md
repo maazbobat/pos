@@ -3,11 +3,12 @@
 Multi-tenant restaurant POS and operations platform: Flutter apps on Firebase
 (Auth, Firestore, Cloud Functions, Storage, Messaging).
 
-**Status:** roadmap step 3, commercial operations. Done before it: tenant
-schema and rules, onboarding Functions, menu setup, and the first app screens.
-Step 3 adds Stripe Billing with a grace period then read-only, the
-PaymentProvider abstraction with refunds and voids, audited platform support
-access, and monitoring ([docs/commercial.md](docs/commercial.md)).
+**Status:** roadmap step 4, online ordering and delivery. Done before it:
+tenant schema and rules, onboarding, menu setup, billing, payments, support
+access and monitoring ([docs/commercial.md](docs/commercial.md)). Step 4 adds
+order taking with cash on the POS, a kitchen display, each restaurant's own
+ordering site, and the delivery-aggregator interface
+([docs/orders.md](docs/orders.md)).
 
 ## Layout
 
@@ -16,6 +17,7 @@ access, and monitoring ([docs/commercial.md](docs/commercial.md)).
 | `apps/pos` | Flutter POS and kitchen display |
 | `apps/manager` | Flutter manager dashboard |
 | `apps/admin` | Platform admin portal (Flutter web) |
+| `apps/online` | Each restaurant's ordering site for pickup (Flutter web) |
 | `packages/shared` | Dart models, Firestore paths, `Role` enum, backend interfaces, test fakes |
 | `packages/firebase_backend` | Firebase implementation of those interfaces |
 | `functions/` | Cloud Functions (TypeScript, Node 22) |
@@ -30,7 +32,7 @@ Needs Flutter (stable), Node 22 and Java 21.
 ```sh
 flutter pub get && flutter analyze      # Dart workspace
 (cd packages/shared && dart test)       # shared models
-(cd apps/pos && flutter test)           # widget tests (also apps/manager, apps/admin)
+(cd apps/pos && flutter test)           # widget tests (also apps/manager, apps/admin, apps/online)
 npm ci
 npm run test:rules                      # Firestore emulator + rules tests
 npm run test:functions                  # Cloud Functions against the emulators
@@ -49,11 +51,15 @@ FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:909
 (cd apps/admin && flutter run -d chrome)     # sign in as admin@demo.test / demo-admin
 (cd apps/manager && flutter run -d chrome)   # the owner accepts the invite link here
 (cd apps/pos && flutter run -d chrome)       # or a tablet; add --dart-define=EMULATOR_HOST=10.0.2.2 on an Android emulator
+(cd apps/online && flutter run -d chrome --web-port 8083)   # the ordering site, at /#/<web address>
 ```
 
 Flow: create a restaurant in admin, accept the owner link in manager, add a
 location and menu, set your PIN, pair the tablet with a code from Devices,
-then unlock it with the PIN.
+then unlock it with the PIN. Ring up an order and take cash. Pair a second
+tablet as a kitchen display to see tickets. In the manager app's Online tab,
+turn on online ordering, then order from the site and take the cash at
+pickup from the POS's Orders screen.
 
 The Firebase config points only at the `demo-pos` project ID, which the
 emulator treats as offline. No real Firebase project is configured yet; dev,

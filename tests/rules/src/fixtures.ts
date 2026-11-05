@@ -50,6 +50,8 @@ export async function seed(db: Firestore): Promise<void> {
   set("platformIncidents/inc-1", { kind: "payment_stuck", orgId: "org-a", resolved: false });
   set("stripeCustomers/cus_123", { orgId: "org-a" });
   set("stripeEvents/evt_123", { orgId: "org-a", type: "invoice.paid" });
+  set("storefronts/maple-cambridge", { orgId: "org-a", locationId: "cambridge" });
+  set("deliveryStores/fake_store-1", { orgId: "org-a", locationId: "cambridge" });
 
   for (const [orgId, org] of Object.entries(ORGS) as [OrgId, (typeof ORGS)[OrgId]][]) {
     const o = `orgs/${orgId}`;
@@ -76,6 +78,7 @@ export async function seed(db: Firestore): Promise<void> {
       const ids = { orgId, locationId: locId };
       set(l, { ...ids, name: locName, status: "active", timezone: "America/Toronto", province: "ON" });
       set(`${l}/settings/hardware`, { ...ids, printerIp: "192.168.1.50", drawer: "printer" });
+      set(`${l}/settings/onlineOrdering`, { ...ids, enabled: true, paused: false, slug: `${orgId}-${locId}` });
       set(`${l}/menuOverrides/item-1`, { ...ids, itemId: "item-1", available: true, priceCents: 600 });
       set(`${l}/staff/${extraUid(orgId)}`, { ...ids, role: "cashier" });
       set(`${l}/devices/device-other`, { ...ids, type: "pos", status: "active", appVersion: "0.1.0" });
@@ -152,10 +155,13 @@ export function order(
 ) {
   return {
     ...ids,
+    source: "pos",
+    ticket: "101",
     status: "new",
     paymentStatus,
-    items: [{ itemId: "item-1", qty: 1, priceCents: 550 }],
-    totals: { subtotalCents: 550, taxCents: 72, totalCents: 622 },
+    fulfillment: "here",
+    items: [orderLine()],
+    totals: { subtotalCents: 550, discountCents: 0, taxCents: 72, totalCents: 622 },
     discounts: [],
     createdBy,
     createdAt: past,
@@ -170,4 +176,29 @@ export function cashSession(
   status: "open" | "closed",
 ) {
   return { ...ids, openedBy, openedAt: past, status, float: 100 };
+}
+
+export function orderLine(overrides: Record<string, unknown> = {}) {
+  return {
+    lineId: "l1", itemId: "item-1", name: "House drink", qty: 1, unitPriceCents: 550,
+    modifiers: [], lineTotalCents: 550, taxable: true, kitchenStation: "bar", notes: null,
+    ...overrides,
+  };
+}
+
+/** An order the ordering site placed (written by Functions in real use). */
+export function onlineOrder(
+  ids: { orgId: string; locationId: string },
+  status: "awaiting_payment" | "new",
+  paymentStatus: "unpaid" | "paid",
+) {
+  return {
+    ...order(ids, paymentStatus, "online"),
+    source: "online",
+    ticket: "W-417",
+    status,
+    fulfillment: "pickup",
+    customer: { name: "Sam", phone: "5195550100", email: null },
+    statusTokenHash: "abc",
+  };
 }

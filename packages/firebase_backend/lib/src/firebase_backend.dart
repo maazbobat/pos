@@ -5,6 +5,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:pos_shared/pos_shared.dart';
 
+import 'orders_backend.dart';
+
 /// Where the apps connect. Until real dev, staging and prod projects exist,
 /// every build talks to the local emulators under the `demo-pos` project ID,
 /// which can't reach anything real.
@@ -52,7 +54,28 @@ Future<Backend> initFirebaseBackend([
     data: FirestoreTenantData(firestore, auth),
     billing: FirebaseBillingBackend(firestore, functions),
     platform: FirebasePlatformBackend(firestore, functions),
+    orders: FirestoreOrdersBackend(firestore, auth, functions),
   );
+}
+
+/// For the public ordering site: only the storefront Functions, no sign-in.
+Future<StorefrontBackend> initStorefrontBackend([
+  BackendConfig config = const BackendConfig(),
+]) async {
+  final app = await Firebase.initializeApp(
+    options: FirebaseOptions(
+      apiKey: 'demo-api-key',
+      appId: '1:0:web:0',
+      messagingSenderId: '0',
+      projectId: config.projectId,
+    ),
+  );
+  final functions = FirebaseFunctions.instanceFor(
+    app: app,
+    region: Callables.region,
+  );
+  functions.useFunctionsEmulator(config.emulatorHost, 5001);
+  return FirebaseStorefrontBackend(functions);
 }
 
 class FirebaseAuthGateway implements AuthGateway {
@@ -360,6 +383,13 @@ class FirestoreTenantData implements TenantData {
     _db.collection(FirestorePaths.devices(orgId, locationId)),
     Device.fromMap,
   );
+
+  @override
+  Stream<Device?> device(String orgId, String locationId, String deviceId) =>
+      _doc(
+        '${FirestorePaths.devices(orgId, locationId)}/$deviceId',
+        Device.fromMap,
+      );
 
   @override
   Stream<List<MenuCategory>> menuCategories(String orgId) => _list(

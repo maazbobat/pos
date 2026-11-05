@@ -50,7 +50,11 @@ export type IncidentKind =
   | "stripe_webhook_unmatched"
   | "stripe_webhook_failed"
   | "payment_stuck"
-  | "payment_mismatch";
+  | "payment_mismatch"
+  | "online_checkout_unmatched"
+  | "online_checkout_amount"
+  | "delivery_order_unmatched"
+  | "delivery_webhook_failed";
 
 /**
  * Records something a person should look at, and logs it at error level so a

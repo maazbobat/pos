@@ -16,9 +16,12 @@ import { type CallableRequest, onCall, onRequest } from "firebase-functions/v2/h
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import Stripe from "stripe";
 import { StripeBillingGateway } from "./billing/gateway.js";
+import { AGGREGATOR_IDS, type AggregatorId, AggregatorNotConfigured, defaultAggregators } from "./delivery/aggregator.js";
 import * as billing from "./handlers/billing.js";
+import * as delivery from "./handlers/delivery.js";
 import * as devices from "./handlers/devices.js";
 import * as monitoring from "./handlers/monitoring.js";
+import * as online from "./handlers/online.js";
 import * as orgs from "./handlers/orgs.js";
 import * as payments from "./handlers/payments.js";
 import * as pins from "./handlers/pins.js";
@@ -26,6 +29,7 @@ import * as staff from "./handlers/staff.js";
 import * as support from "./handlers/support.js";
 import type { Caller } from "./lib/tenant.js";
 import { recordIncident } from "./lib/platform.js";
+import { StripeOnlineCheckoutGateway } from "./orders/checkout.js";
 import { defaultRegistry } from "./payments/providers.js";
 
 // Montreal, so tenant data and compute stay in Canada.
@@ -38,8 +42,13 @@ const STRIPE_SECRET_KEY = defineSecret("STRIPE_SECRET_KEY");
 const STRIPE_WEBHOOK_SECRET = defineSecret("STRIPE_WEBHOOK_SECRET");
 // Where Stripe sends owners back to after Checkout or the portal.
 const MANAGER_APP_URL = defineString("MANAGER_APP_URL", { default: "http://localhost:8080" });
+// Online ordering: the ordering site's address (for Stripe's return links)
+// and the Connect webhook secret for events from restaurants' Stripe accounts.
+const ORDERING_SITE_URL = defineString("ORDERING_SITE_URL", { default: "http://localhost:8083" });
+const STRIPE_CONNECT_WEBHOOK_SECRET = defineSecret("STRIPE_CONNECT_WEBHOOK_SECRET");
 
 const providers = defaultRegistry();
+const aggregators = defaultAggregators();
 const gateway = () => new StripeBillingGateway(new Stripe(STRIPE_SECRET_KEY.value()));
 
 function caller(req: CallableRequest): Caller {
@@ -144,3 +153,78 @@ export const healthSweep = onSchedule("every 15 minutes", async () => {
   await monitoring.runHealthSweep();
 });
 export const resolveIncident = callable(monitoring.resolveIncident);
+
+// Online ordering site. getStorefront, placeOnlineOrder and
+// getOnlineOrderStatus are public: guests don't sign in. Turn on App Check
+// and per-IP limits before launch (docs/orders.md).
+export const updateOnlineOrdering = callable(online.updateOnlineOrdering);
+export const getStorefront = onCall((req) => online.getStorefront(req.data));
+export const placeOnlineOrder = onCall({ secrets: [STRIPE_SECRET_KEY] }, (req) =>
+  online.placeOnlineOrder(
+    req.data,
+    new StripeOnlineCheckoutGateway(new Stripe(STRIPE_SECRET_KEY.value())),
+    { siteUrl: ORDERING_SITE_URL.value() },
+  ),
+);
+export const getOnlineOrderStatus = onCall((req) => online.getOnlineOrderStatus(req.data));
+
+/** Checkout events from restaurants' connected Stripe accounts. Same signature rules as stripeWebhook. */
+export const onlineCheckoutWebhook = onRequest({ secrets: [STRIPE_CONNECT_WEBHOOK_SECRET] }, async (req, res) => {
+  if (req.method !== "POST") {
+    res.status(405).send("POST only");
+    return;
+  }
+  let event: online.CheckoutEventLike;
+  try {
+    event = billing.verifyStripeEvent(
+      req.rawBody, req.get("stripe-signature") ?? "", STRIPE_CONNECT_WEBHOOK_SECRET.value(),
+    ) as unknown as online.CheckoutEventLike;
+  } catch {
+    logger.warn("Rejected an online checkout webhook with a bad signature");
+    res.status(400).send("Bad signature");
+    return;
+  }
+  try {
+    res.status(200).json({ received: true, outcome: await online.handleOnlineCheckoutEvent(event) });
+  } catch (err) {
+    await recordIncident("stripe_webhook_failed", "Online checkout webhook failed", { eventId: event.id, err: String(err) });
+    res.status(500).send("Processing failed");
+  }
+});
+
+// Delivery marketplaces through an aggregator
+export const linkDeliveryStore = callable(delivery.linkDeliveryStore);
+export const syncDeliveryMenu = callable((c, d) => delivery.syncDeliveryMenu(c, d, aggregators));
+
+/**
+ * POST /deliveryWebhook/{aggregator}. Verified before anything is read; an
+ * aggregator that isn't set up gets a 503 so it retries later.
+ */
+export const deliveryWebhook = onRequest(async (req, res) => {
+  const id = req.path.replace(/^\/+/, "").split("/")[0] as AggregatorId;
+  if (req.method !== "POST" || !AGGREGATOR_IDS.includes(id)) {
+    res.status(404).send("Not found");
+    return;
+  }
+  let aggregator;
+  try {
+    aggregator = aggregators(id);
+    aggregator.verifyWebhook(req.rawBody, req.headers as Record<string, string | undefined>);
+  } catch (err) {
+    const notSetUp = err instanceof AggregatorNotConfigured;
+    logger.warn("Rejected a delivery webhook", { aggregator: id, err: String(err) });
+    res.status(notSetUp ? 503 : 400).send(notSetUp ? "Not set up" : "Bad signature");
+    return;
+  }
+  try {
+    const order = aggregator.parseOrder(req.body);
+    if (!order) {
+      res.status(200).json({ received: true, outcome: "ignored" });
+      return;
+    }
+    res.status(200).json({ received: true, ...(await delivery.ingestDeliveryOrder(id, order)) });
+  } catch (err) {
+    await recordIncident("delivery_webhook_failed", "Delivery webhook failed", { aggregator: id, err: String(err) });
+    res.status(500).send("Processing failed");
+  }
+});

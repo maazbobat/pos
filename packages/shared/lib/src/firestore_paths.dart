@@ -42,6 +42,8 @@ abstract final class FirestorePaths {
       _loc(orgId, locationId, 'devices');
   static String orders(String orgId, String locationId) =>
       _loc(orgId, locationId, 'orders');
+  static String order(String orgId, String locationId, String orderId) =>
+      '${orders(orgId, locationId)}/$orderId';
   static String payments(String orgId, String locationId, String orderId) =>
       _loc(orgId, locationId, 'orders/$orderId/payments');
   static String cashSessions(String orgId, String locationId) =>

@@ -38,10 +38,10 @@ import { asInput, docId, type Input, str } from "../lib/validate.js";
 import {
   type ChargeResult,
   type ChargeStatus,
-  PROVIDER_IDS,
   type ProviderId,
   ProviderNotConfigured,
   type ProviderRegistry,
+  TERMINAL_PROVIDER_IDS,
 } from "../payments/provider.js";
 import { verifyManagerPin } from "./pins.js";
 
@@ -137,7 +137,7 @@ function paymentStatusFor(sums: PaymentSums, totalCents: number): "unpaid" | "pa
 async function providerFor(tx: Transaction, ref: OrderRef, terminalId: string | null) {
   const settings = (await tx.get(db().doc(paymentPaths.settings(ref.orgId, ref.locationId)))).data() ?? {};
   const provider = settings.cardProvider as ProviderId | undefined;
-  if (!provider || !PROVIDER_IDS.includes(provider) || provider === "cash") {
+  if (!provider || !(TERMINAL_PROVIDER_IDS as readonly string[]).includes(provider)) {
     throw fail.precondition("Card payments aren't set up at this location.");
   }
   const terminals = (settings.terminals ?? {}) as Record<string, { ref?: string }>;

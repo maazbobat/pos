@@ -20,7 +20,7 @@ import {
   where,
   type Firestore,
 } from "firebase/firestore";
-import { cashSession, menuItem, modifierGroup, order, type Role } from "./fixtures.js";
+import { cashSession, menuItem, modifierGroup, onlineOrder, order, orderLine, type Role } from "./fixtures.js";
 
 export const TARGET_ORG = "org-a";
 export const TARGET_LOC = "cambridge";
@@ -57,10 +57,13 @@ const NOBODY: Role[] = [];
 
 const newOrder = (ctx: OpContext, overrides: Record<string, unknown> = {}) => ({
   ...IDS,
+  source: "pos",
+  ticket: "123",
   status: "new",
   paymentStatus: "paid",
-  items: [{ itemId: "item-1", qty: 2, priceCents: 550 }],
-  totals: { subtotalCents: 1100, taxCents: 143, totalCents: 1243 },
+  fulfillment: "here",
+  items: [orderLine({ qty: 2, lineTotalCents: 1100 })],
+  totals: { subtotalCents: 1100, discountCents: 0, taxCents: 143, totalCents: 1243 },
   discounts: [],
   createdBy: ctx.uid,
   createdAt: serverTimestamp(),
@@ -255,6 +258,30 @@ export const OPERATIONS: Operation[] = [
     run: (db) => updateDoc(doc(db, `${LOC}/settings/hardware`), { printerIp: "192.168.1.51" }),
   },
   {
+    name: "read online ordering settings",
+    scope: "location",
+    allowed: ALL,
+    run: (db) => getDoc(doc(db, `${LOC}/settings/onlineOrdering`)),
+  },
+  {
+    name: "edit online ordering settings directly",
+    scope: "location",
+    allowed: NOBODY,
+    run: (db) => updateDoc(doc(db, `${LOC}/settings/onlineOrdering`), { slug: "taken" }),
+  },
+  {
+    name: "read a storefront address lookup",
+    scope: "org",
+    allowed: NOBODY,
+    run: (db) => getDoc(doc(db, "storefronts/maple-cambridge")),
+  },
+  {
+    name: "read a delivery store mapping",
+    scope: "org",
+    allowed: NOBODY,
+    run: (db) => getDoc(doc(db, "deliveryStores/fake_store-1")),
+  },
+  {
     name: "set a location price override",
     scope: "location",
     allowed: MANAGERS,
@@ -372,8 +399,9 @@ export const OPERATIONS: Operation[] = [
     allowed: SELLERS,
     setup: seedOrder("unpaid"),
     run: (db, ctx) => updateDoc(doc(db, `${LOC}/orders/${ctx.id}`), {
-      discounts: [{ type: "percent", value: 10 }],
-      totals: { subtotal: 5.5, discount: 0.55, tax: 0.64, total: 5.59 },
+      discounts: [{ type: "percent", value: 10, reason: "regular" }],
+      totals: { subtotalCents: 550, discountCents: 55, taxCents: 64, totalCents: 559 },
+      updatedAt: serverTimestamp(), updatedBy: ctx.uid,
     }),
   },
   {
@@ -421,6 +449,85 @@ export const OPERATIONS: Operation[] = [
     allowed: NOBODY,
     setup: seedOrder("unpaid"),
     run: (db, ctx) => deleteDoc(doc(db, `${LOC}/orders/${ctx.id}`)),
+  },
+
+  {
+    name: "create an order that claims to be online",
+    scope: "location",
+    allowed: NOBODY,
+    run: (db, ctx) => setDoc(doc(db, `${LOC}/orders/${ctx.id}`), newOrder(ctx, { source: "online" })),
+  },
+  {
+    name: "create an order whose totals don't add up",
+    scope: "location",
+    allowed: NOBODY,
+    run: (db, ctx) => setDoc(doc(db, `${LOC}/orders/${ctx.id}`), newOrder(ctx, {
+      totals: { subtotalCents: 1100, discountCents: 0, taxCents: 143, totalCents: 100 },
+    })),
+  },
+  {
+    name: "create an order with dollar amounts as floats",
+    scope: "location",
+    allowed: NOBODY,
+    run: (db, ctx) => setDoc(doc(db, `${LOC}/orders/${ctx.id}`), newOrder(ctx, {
+      totals: { subtotalCents: 11.0, discountCents: 0, taxCents: 1.43, totalCents: 12.43 },
+    })),
+  },
+  {
+    name: "create an order with no items",
+    scope: "location",
+    allowed: NOBODY,
+    run: (db, ctx) => setDoc(doc(db, `${LOC}/orders/${ctx.id}`), newOrder(ctx, { items: [] })),
+  },
+  {
+    name: "send an unpaid online order to the kitchen",
+    scope: "location",
+    allowed: NOBODY,
+    setup: (admin, ctx) =>
+      setDoc(doc(admin, `${LOC}/orders/${ctx.id}`), onlineOrder(IDS, "awaiting_payment", "unpaid")),
+    run: (db, ctx) => updateDoc(doc(db, `${LOC}/orders/${ctx.id}`), {
+      status: "new", updatedAt: serverTimestamp(), updatedBy: ctx.uid,
+    }),
+  },
+  {
+    name: "move an online order's prep status",
+    scope: "location",
+    allowed: [...SELLERS, "kitchen"],
+    setup: (admin, ctx) =>
+      setDoc(doc(admin, `${LOC}/orders/${ctx.id}`), onlineOrder(IDS, "new", "paid")),
+    run: (db, ctx) => updateDoc(doc(db, `${LOC}/orders/${ctx.id}`), {
+      status: "ready", updatedAt: serverTimestamp(), updatedBy: ctx.uid,
+    }),
+  },
+  {
+    name: "take payment at pickup for an online order",
+    scope: "location",
+    allowed: SELLERS,
+    setup: (admin, ctx) =>
+      setDoc(doc(admin, `${LOC}/orders/${ctx.id}`), onlineOrder(IDS, "new", "unpaid")),
+    run: (db, ctx) => updateDoc(doc(db, `${LOC}/orders/${ctx.id}`), {
+      paymentStatus: "paid", updatedAt: serverTimestamp(), updatedBy: ctx.uid,
+    }),
+  },
+  {
+    name: "change the items or prices of an online order",
+    scope: "location",
+    allowed: NOBODY,
+    setup: (admin, ctx) =>
+      setDoc(doc(admin, `${LOC}/orders/${ctx.id}`), onlineOrder(IDS, "new", "unpaid")),
+    run: (db, ctx) => updateDoc(doc(db, `${LOC}/orders/${ctx.id}`), {
+      totals: { subtotalCents: 1, discountCents: 0, taxCents: 0, totalCents: 1 },
+    }),
+  },
+  {
+    name: "change an online order's customer details",
+    scope: "location",
+    allowed: NOBODY,
+    setup: (admin, ctx) =>
+      setDoc(doc(admin, `${LOC}/orders/${ctx.id}`), onlineOrder(IDS, "new", "paid")),
+    run: (db, ctx) => updateDoc(doc(db, `${LOC}/orders/${ctx.id}`), {
+      "customer.phone": "4165550199",
+    }),
   },
 
   // ---------- Payments ----------

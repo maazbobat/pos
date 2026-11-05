@@ -17,7 +17,7 @@ import {
 } from "firebase/firestore";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { asAdmin, createEnv, dbFor } from "./env.js";
-import { cashSession, memberUid, menuItem, modifierGroup, ownerUid, PLATFORM_ADMIN, seed } from "./fixtures.js";
+import { cashSession, memberUid, menuItem, modifierGroup, orderLine, ownerUid, PLATFORM_ADMIN, seed } from "./fixtures.js";
 
 const A = "orgs/org-a";
 const CAMBRIDGE = `${A}/locations/cambridge`;
@@ -45,10 +45,13 @@ const as = (uid: string | null) => dbFor(env, uid);
 const newOrder = (uid: string, loc = "cambridge") => ({
   orgId: "org-a",
   locationId: loc,
+  source: "pos",
+  ticket: "101",
   status: "new",
   paymentStatus: "paid",
-  items: [{ itemId: "item-1", qty: 1, priceCents: 550 }],
-  totals: { subtotalCents: 550, taxCents: 72, totalCents: 622 },
+  fulfillment: "here",
+  items: [orderLine()],
+  totals: { subtotalCents: 550, discountCents: 0, taxCents: 72, totalCents: 622 },
   discounts: [],
   createdBy: uid,
   createdAt: serverTimestamp(),
