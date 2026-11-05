@@ -45,3 +45,14 @@ Yes = rules allow. Fn = Cloud Function only. R = read only. Own = own records.
 | Audit log | R | R (own stores) | | | | | | |
 | Billing: Checkout, portal | Fn | | | | | | | |
 | Memberships, devices, locations | Fn | Fn | Fn | | | | | |
+| Online ordering settings (web address, payment options) | Fn | Fn | Fn | R | R | R | R | R |
+| Pause or resume online orders | Fn | Fn | Fn | Fn | Fn | | | Fn |
+| Stripe account for online payments | Fn | | | | | | | |
+| Link delivery stores | Fn | | | | | | | |
+| Push menu to delivery apps | Fn | Fn | Fn | | | | | |
+| Take payment at pickup for online orders | Yes | Yes | Yes | Yes | | | | Yes |
+
+Online and delivery orders are written by Functions with the server's (or
+the marketplace's) prices; staff can move their status and record payment
+at pickup, but not change items, prices or the guest's details. Guests on
+the ordering site don't sign in and never touch Firestore directly.

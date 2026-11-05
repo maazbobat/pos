@@ -11,6 +11,8 @@ platformIncidents/{id}               problems to look at (platform admins read)
 stripeCustomers/{customerId}         Stripe customer to org link (Functions only)
 stripeEvents/{eventId}               processed Stripe webhook events (Functions only)
 pairingCodes/{code}                  device pairing codes (Functions only)
+storefronts/{slug}                   ordering-site web address to org and location (Functions only)
+deliveryStores/{key}                 aggregator store to org and location (Functions only)
 users/{uid}                          profile; orgIds[] maintained by Functions
 
 orgs/{orgId}                         name, type, status, accessLevel, plan
@@ -27,11 +29,13 @@ orgs/{orgId}                         name, type, status, accessLevel, plan
 
   locations/{locationId}             name, status, timezone, province
     settings/{hours | tax | hardware | kitchenRouting | payments}
+    settings/onlineOrdering          web address, pause, payment options (Functions only)
+    settings/delivery_{aggregator}   linked delivery store (Functions only)
     menuOverrides/{itemId}           available, price
     staff/{uid}                      staff list mirrored from memberships (Functions only)
     devices/{deviceId}               type, status, appVersion, lastSeenAt, printer health
       private/pinGuard               wrong-PIN counter and lockout (Functions only)
-    orders/{orderId}
+    orders/{orderId}                 docs/orders.md
       payments/{paymentId}           cents, no card data; clients record cash only
       refunds/{refundId}             written by refundPayment (Functions only)
     cashSessions/{sessionId}

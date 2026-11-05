@@ -3,10 +3,11 @@ import 'package:flutter/material.dart';
 import 'app.dart';
 import 'devices_tab.dart';
 import 'menu_tab.dart';
+import 'online_tab.dart';
 import 'team_tab.dart';
 
-/// One store. Managers get Team and Devices; everyone with a role here sees
-/// the menu (and owners and managers can change it).
+/// One store. Managers get Team, Devices and Online ordering; everyone with
+/// a role here sees the menu (and owners and managers can change it).
 class LocationScreen extends StatefulWidget {
   const LocationScreen({super.key, required this.store});
   final StoreContext store;
@@ -27,6 +28,8 @@ class _LocationScreenState extends State<LocationScreen> {
       if (store.isManager)
         ('Devices', Icons.tablet_android, DevicesTab(store: store)),
       ('Menu', Icons.restaurant_menu, MenuTab(store: store)),
+      if (store.isManager)
+        ('Online', Icons.storefront_outlined, OnlineTab(store: store)),
     ];
     final index = _tab.clamp(0, tabs.length - 1);
     return Scaffold(
