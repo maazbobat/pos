@@ -44,6 +44,12 @@ export async function seed(db: Firestore): Promise<void> {
   const set = (path: string, data: Record<string, unknown>) => batch.set(doc(db, path), data);
 
   set(`platformAdmins/${PLATFORM_ADMIN}`, { createdAt: past });
+  set("platformOrgs/org-a", { orgId: "org-a", name: "Maple Tea Co", plan: "professional", status: "active" });
+  set("platformAuditLog/evt-1", { orgId: "org-a", action: "org.created", createdAt: past });
+  set("platformHealth/summary", { staleDevices: 0, checkedAt: past });
+  set("platformIncidents/inc-1", { kind: "payment_stuck", orgId: "org-a", resolved: false });
+  set("stripeCustomers/cus_123", { orgId: "org-a" });
+  set("stripeEvents/evt_123", { orgId: "org-a", type: "invoice.paid" });
 
   for (const [orgId, org] of Object.entries(ORGS) as [OrgId, (typeof ORGS)[OrgId]][]) {
     const o = `orgs/${orgId}`;
@@ -77,7 +83,11 @@ export async function seed(db: Firestore): Promise<void> {
       set(`${o}/invites/inv-${locId}`, { ...ids, email: `new-${locId}@example.com`, role: "cashier", status: "pending" });
       set(`${l}/orders/order-1`, order(ids, "unpaid", memberUid(orgId, locId, "cashier")));
       set(`${l}/orders/order-1/payments/pay-1`, {
-        ...ids, orderId: "order-1", method: "cash", amount: 5.5, createdBy: "seed", createdAt: past,
+        ...ids, orderId: "order-1", method: "cash", provider: "cash", amountCents: 550, tipCents: 0,
+        status: "succeeded", idempotencyKey: "pay-1", createdBy: "seed", createdAt: past,
+      });
+      set(`${l}/orders/order-1/refunds/refund-1`, {
+        ...ids, orderId: "order-1", paymentId: "pay-1", amountCents: 100, status: "succeeded", reason: "spilled",
       });
       set(`${l}/inventoryItems/inv-1`, { ...ids, name: "Tapioca pearls", quantity: 20, unit: "kg" });
       set(`${l}/reports/daily-sales`, { ...ids, kind: "sales", total: 500 });
@@ -144,8 +154,8 @@ export function order(
     ...ids,
     status: "new",
     paymentStatus,
-    items: [{ itemId: "item-1", qty: 1, price: 5.5 }],
-    totals: { subtotal: 5.5, tax: 0.72, total: 6.22 },
+    items: [{ itemId: "item-1", qty: 1, priceCents: 550 }],
+    totals: { subtotalCents: 550, taxCents: 72, totalCents: 622 },
     discounts: [],
     createdBy,
     createdAt: past,

@@ -59,14 +59,19 @@ const newOrder = (ctx: OpContext, overrides: Record<string, unknown> = {}) => ({
   ...IDS,
   status: "new",
   paymentStatus: "paid",
-  items: [{ itemId: "item-1", qty: 2, price: 5.5 }],
-  totals: { subtotal: 11, tax: 1.43, total: 12.43 },
+  items: [{ itemId: "item-1", qty: 2, priceCents: 550 }],
+  totals: { subtotalCents: 1100, taxCents: 143, totalCents: 1243 },
   discounts: [],
   createdBy: ctx.uid,
   createdAt: serverTimestamp(),
   deviceId: null,
   idempotencyKey: ctx.id,
   ...overrides,
+});
+
+const cashPayment = (ctx: OpContext) => ({
+  ...IDS, orderId: "order-1", method: "cash", provider: "cash", amountCents: 622, tipCents: 100,
+  status: "succeeded", idempotencyKey: ctx.id, createdBy: ctx.uid, createdAt: serverTimestamp(),
 });
 
 const seedOrder = (paymentStatus: "unpaid" | "paid") => (admin: Firestore, ctx: OpContext) =>
@@ -407,7 +412,7 @@ export const OPERATIONS: Operation[] = [
     allowed: NOBODY,
     setup: seedOrder("paid"),
     run: (db, ctx) => updateDoc(doc(db, `${LOC}/orders/${ctx.id}`), {
-      totals: { subtotal: 1, tax: 0, total: 1 },
+      totals: { subtotalCents: 1, taxCents: 0, totalCents: 1 },
     }),
   },
   {
@@ -423,18 +428,14 @@ export const OPERATIONS: Operation[] = [
     name: "record a cash payment",
     scope: "location",
     allowed: SELLERS,
-    run: (db, ctx) => setDoc(doc(db, `${LOC}/orders/order-1/payments/${ctx.id}`), {
-      ...IDS, orderId: "order-1", method: "cash", amount: 6.22,
-      createdBy: ctx.uid, createdAt: serverTimestamp(),
-    }),
+    run: (db, ctx) => setDoc(doc(db, `${LOC}/orders/order-1/payments/${ctx.id}`), cashPayment(ctx)),
   },
   {
     name: "record a card payment from the client",
     scope: "location",
     allowed: NOBODY,
     run: (db, ctx) => setDoc(doc(db, `${LOC}/orders/order-1/payments/${ctx.id}`), {
-      ...IDS, orderId: "order-1", method: "card", amount: 6.22,
-      createdBy: ctx.uid, createdAt: serverTimestamp(),
+      ...cashPayment(ctx), method: "card", provider: "stripe_terminal",
     }),
   },
   {
@@ -447,7 +448,21 @@ export const OPERATIONS: Operation[] = [
     name: "edit a payment",
     scope: "location",
     allowed: NOBODY,
-    run: (db) => updateDoc(doc(db, `${LOC}/orders/order-1/payments/pay-1`), { amount: 0.01 }),
+    run: (db) => updateDoc(doc(db, `${LOC}/orders/order-1/payments/pay-1`), { amountCents: 1 }),
+  },
+  {
+    name: "read refunds",
+    scope: "location",
+    allowed: [...SELLERS, "accountant"],
+    run: (db) => getDoc(doc(db, `${LOC}/orders/order-1/refunds/refund-1`)),
+  },
+  {
+    name: "record a refund from the client",
+    scope: "location",
+    allowed: NOBODY,
+    run: (db, ctx) => setDoc(doc(db, `${LOC}/orders/order-1/refunds/${ctx.id}`), {
+      ...IDS, orderId: "order-1", paymentId: "pay-1", amountCents: 550, status: "succeeded",
+    }),
   },
 
   // ---------- Cash sessions ----------

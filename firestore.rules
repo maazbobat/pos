@@ -194,6 +194,34 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Admin portal views, written by Functions. A tenant summary (name,
+    // plan, status, counts) lets the platform run support and billing
+    // without standing access to any tenant's data.
+    match /platformOrgs/{orgId} {
+      allow read: if isPlatformAdmin();
+      allow write: if false;
+    }
+    match /platformAuditLog/{eventId} {
+      allow read: if isPlatformAdmin();
+      allow write: if false;
+    }
+    match /platformHealth/{docId} {
+      allow read: if isPlatformAdmin();
+      allow write: if false;
+    }
+    match /platformIncidents/{incidentId} {
+      allow read: if isPlatformAdmin();
+      allow write: if false;
+    }
+
+    // Stripe customer-to-org links and processed webhook events (Functions only).
+    match /stripeCustomers/{customerId} {
+      allow read, write: if false;
+    }
+    match /stripeEvents/{eventId} {
+      allow read, write: if false;
+    }
+
     match /users/{uid} {
       allow read: if isUser(uid);
       // orgIds powers the org picker and is maintained by Functions.
@@ -463,18 +491,35 @@ service cloud.firestore {
 
           allow delete: if false;
 
-          // Clients record cash only. Card payments, voids and refunds are
-          // written by the PaymentProvider Functions.
+          // Clients record cash only, so cash works offline. The document ID
+          // is the POS's idempotency key, so a retried write can't record the
+          // same cash twice. Card payments, voids and refunds are written by
+          // the PaymentProvider Functions. Amounts are whole cents.
           match /payments/{paymentId} {
             allow read: if canReadAt(orgId, locId, PAYMENT_READERS());
             allow create: if canWriteAt(orgId, locId, SELLERS())
               && tenantIdsMatch(orgId, locId)
               && createdByCaller()
+              && incoming().keys().hasOnly(['orgId', 'locationId', 'orderId', 'method', 'provider',
+                                            'amountCents', 'tipCents', 'status', 'idempotencyKey',
+                                            'cashSessionId', 'staffUid', 'createdBy', 'createdAt'])
               && incoming().orderId == orderId
               && incoming().method == 'cash'
-              && incoming().amount is number
-              && incoming().amount > 0;
+              && incoming().provider == 'cash'
+              && incoming().status == 'succeeded'
+              && incoming().idempotencyKey == paymentId
+              && incoming().amountCents is int
+              && incoming().amountCents > 0
+              && incoming().amountCents <= 10000000
+              && (!('tipCents' in incoming())
+                  || (incoming().tipCents is int && incoming().tipCents >= 0));
             allow update, delete: if false;
+          }
+
+          // Refunds, written by refundPayment after a manager approves.
+          match /refunds/{refundId} {
+            allow read: if canReadAt(orgId, locId, PAYMENT_READERS());
+            allow write: if false;
           }
         }
 

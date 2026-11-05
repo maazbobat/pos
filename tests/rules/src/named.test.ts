@@ -47,8 +47,8 @@ const newOrder = (uid: string, loc = "cambridge") => ({
   locationId: loc,
   status: "new",
   paymentStatus: "paid",
-  items: [{ itemId: "item-1", qty: 1, price: 5.5 }],
-  totals: { subtotal: 5.5, tax: 0.72, total: 6.22 },
+  items: [{ itemId: "item-1", qty: 1, priceCents: 550 }],
+  totals: { subtotalCents: 550, taxCents: 72, totalCents: 622 },
   discounts: [],
   createdBy: uid,
   createdAt: serverTimestamp(),
@@ -225,6 +225,60 @@ describe("platform admin access", () => {
       { reason: "x", expiresAt: Timestamp.fromDate(new Date(Date.now() + 3_600_000)) },
     ));
     await assertFails(getDoc(doc(as(uid), A)));
+  });
+});
+
+describe("platform collections", () => {
+  const platformDocs = ["platformOrgs/org-a", "platformAuditLog/evt-1", "platformHealth/summary", "platformIncidents/inc-1"];
+
+  test("only platform admins read the admin portal's views, and nobody writes them", async () => {
+    for (const path of platformDocs) {
+      await assertSucceeds(getDoc(doc(as(PLATFORM_ADMIN), path)));
+      await assertFails(getDoc(doc(as(ownerUid("org-a")), path)));
+      await assertFails(getDoc(doc(as(null), path)));
+      await assertFails(setDoc(doc(as(PLATFORM_ADMIN), path), { orgId: "org-a", plan: "franchise" }));
+    }
+  });
+
+  test("Stripe links and processed events are server-only, even for platform admins", async () => {
+    for (const path of ["stripeCustomers/cus_123", "stripeEvents/evt_123"]) {
+      await assertFails(getDoc(doc(as(PLATFORM_ADMIN), path)));
+      await assertFails(getDoc(doc(as(ownerUid("org-a")), path)));
+      await assertFails(setDoc(doc(as(ownerUid("org-a")), path), { orgId: "org-b" }));
+    }
+  });
+
+  test("an owner can't create a support grant for anyone", async () => {
+    await assertFails(setDoc(doc(as(ownerUid("org-a")), `${A}/supportGrants/${PLATFORM_ADMIN}`), {
+      reason: "x", expiresAt: Timestamp.fromDate(new Date(Date.now() + 3_600_000)),
+    }));
+  });
+});
+
+describe("cash payments must have the right shape", () => {
+  const cashier = memberUid("org-a", "cambridge", "cashier");
+  const pay = (id: string, overrides: Record<string, unknown> = {}) => setDoc(
+    doc(as(cashier), `${CAMBRIDGE}/orders/order-1/payments/${id}`),
+    {
+      orgId: "org-a", locationId: "cambridge", orderId: "order-1", method: "cash", provider: "cash",
+      amountCents: 622, tipCents: 0, status: "succeeded", idempotencyKey: id,
+      createdBy: cashier, createdAt: serverTimestamp(),
+      ...overrides,
+    },
+  );
+
+  test("a well-formed cash payment in cents is accepted", async () => {
+    await assertSucceeds(pay("k-ok"));
+  });
+
+  test("dollars as floats, a mismatched idempotency key, or a pending status are refused", async () => {
+    await assertFails(pay("k-float", { amountCents: 6.22 }));
+    await assertFails(pay("k-zero", { amountCents: 0 }));
+    await assertFails(pay("k-tip", { tipCents: -1 }));
+    await assertFails(pay("k-id", { idempotencyKey: "something-else" }));
+    await assertFails(pay("k-pending", { status: "pending" }));
+    await assertFails(pay("k-refund", { refundedCents: 0 }));
+    await assertFails(pay("k-ref", { providerRef: "ch_123" }));
   });
 });
 
