@@ -55,6 +55,7 @@ Future<Backend> initFirebaseBackend([
     billing: FirebaseBillingBackend(firestore, functions),
     platform: FirebasePlatformBackend(firestore, functions),
     orders: FirestoreOrdersBackend(firestore, auth, functions),
+    counter: FirestoreCounterBackend(firestore, auth, functions),
   );
 }
 

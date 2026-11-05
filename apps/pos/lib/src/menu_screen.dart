@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:pos_shared/pos_shared.dart';
 
 import 'app.dart';
+import 'counter_widgets.dart';
 import 'device_shell.dart';
 import 'order_widgets.dart';
 import 'orders_screen.dart';
@@ -33,7 +36,109 @@ class _MenuScreenState extends State<MenuScreen> {
   /// the cart is read, so what is charged always includes tax.
   List<TaxRate> _taxRates = const [];
 
+  PaymentSettings _payments = const PaymentSettings();
+  HardwareSettings _hardware = const HardwareSettings();
+  final List<StreamSubscription<Object?>> _subs = [];
+
   DeviceContext get device => widget.device;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_subs.isNotEmpty) return;
+    final counter = BackendScope.of(context).counter;
+    _subs
+      ..add(counter.paymentSettings(device.orgId, device.locationId).listen((s) => setState(() => _payments = s)))
+      ..add(counter.hardware(device.orgId, device.locationId).listen((s) => setState(() => _hardware = s)));
+  }
+
+  @override
+  void dispose() {
+    for (final s in _subs) {
+      s.cancel();
+    }
+    super.dispose();
+  }
+
+  PosOrderDraft _draft(Cart cart) => PosOrderDraft(
+    orgId: device.orgId,
+    locationId: device.locationId,
+    orderId: BackendScope.of(context).orders.newOrderId(device.orgId, device.locationId),
+    deviceId: device.deviceId,
+    staffUid: widget.staff.uid,
+    cart: cart,
+  );
+
+  Order _orderOf(PosOrderDraft draft, PaymentStatus status) => Order.fromMap(draft.orderId, {
+    ...draft.toMap(createdBy: device.deviceId, paymentStatus: status),
+    'createdAt': DateTime.now(),
+  });
+
+  /// After a sale: kitchen tickets, the drawer for cash, and the receipt
+  /// (printed now, or offered on the confirmation).
+  void _afterSale(Order order, List<ReceiptPayment> payments, {required bool cash}) {
+    final hw = _hardware;
+    if (hw.autoPrintKitchen) printKitchen(context, order: order, hardware: hw);
+    if (hw.autoPrintReceipt) {
+      printReceipt(context, order: order, hardware: hw, payments: payments, openDrawer: cash);
+    } else if (cash && hw.drawerPrinter != null) {
+      final messenger = ScaffoldMessenger.of(context);
+      BackendScope.printingOf(context).openDrawer(hw).then((e) => showPrintErrors(messenger, e));
+    }
+  }
+
+  SnackBarAction? _receiptAction(Order order, List<ReceiptPayment> payments) =>
+      _hardware.receiptPrinter == null || _hardware.autoPrintReceipt
+      ? null
+      : SnackBarAction(
+          key: const Key('print-receipt'),
+          label: 'Print receipt',
+          onPressed: () => printReceipt(context, order: order, hardware: _hardware, payments: payments),
+        );
+
+  Future<void> _payCard() async {
+    final backend = BackendScope.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final cart = _cart.withTaxRates(_taxRates);
+    final draft = _draft(cart);
+    var placed = false;
+    final done = await showDialog<CardPaymentDone>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => CardPaymentDialog(
+        totalCents: cart.totals.totalCents,
+        readers: _payments.readers,
+        ensureOrder: () async {
+          await backend.counter.placeUnpaidOrder(draft);
+          placed = true;
+          return _orderOf(draft, PaymentStatus.unpaid);
+        },
+      ),
+    );
+    if (!mounted) return;
+    if (placed) _setCart(cart.clear());
+    if (done == null) {
+      if (placed) {
+        messenger.showSnackBar(SnackBar(
+          content: Text('Order ${draft.ticket} is saved as not paid. Take payment from Orders.'),
+        ));
+      }
+      return;
+    }
+    final order = _orderOf(draft, PaymentStatus.paid);
+    final payments = [done.payment.toReceipt()];
+    _afterSale(order, payments, cash: false);
+    messenger.showSnackBar(
+      SnackBar(
+        key: const Key('sale-done'),
+        duration: const Duration(seconds: 6),
+        // It may carry "Print receipt"; still go away for the next guest.
+        persist: false,
+        content: Text('Order ${draft.ticket} paid by card.'),
+        action: _receiptAction(order, payments),
+      ),
+    );
+  }
 
   void _setCart(Cart cart) => setState(() => _cart = cart);
 
@@ -63,14 +168,7 @@ class _MenuScreenState extends State<MenuScreen> {
       builder: (_) => CashDialog(totalCents: cart.totals.totalCents),
     );
     if (tendered == null || !mounted) return;
-    final draft = PosOrderDraft(
-      orgId: device.orgId,
-      locationId: device.locationId,
-      orderId: backend.orders.newOrderId(device.orgId, device.locationId),
-      deviceId: device.deviceId,
-      staffUid: widget.staff.uid,
-      cart: cart,
-    );
+    final draft = _draft(cart);
     try {
       await backend.orders.placeCashOrder(draft);
     } catch (e) {
@@ -79,10 +177,18 @@ class _MenuScreenState extends State<MenuScreen> {
     }
     _setCart(cart.clear());
     final change = changeDue(cart.totals.totalCents, tendered) ?? 0;
+    final order = _orderOf(draft, PaymentStatus.paid);
+    final payments = [
+      ReceiptPayment(label: 'Cash', amountCents: cart.totals.totalCents, tenderedCents: tendered),
+    ];
+    _afterSale(order, payments, cash: true);
     messenger.showSnackBar(
       SnackBar(
         key: const Key('sale-done'),
         duration: const Duration(seconds: 6),
+        // It may carry "Print receipt"; still go away for the next guest.
+        persist: false,
+        action: _receiptAction(order, payments),
         content: Text(
           'Order ${draft.ticket} paid. '
           '${change > 0 ? 'Change: ${formatCad(change)}' : 'No change.'}',
@@ -156,6 +262,7 @@ class _MenuScreenState extends State<MenuScreen> {
                       cart: cart,
                       onChanged: _setCart,
                       onPayCash: _payCash,
+                      onPayCard: _payments.cardsEnabled ? _payCard : null,
                     );
                     return LayoutBuilder(
                       builder: (context, box) {
@@ -193,6 +300,12 @@ class _MenuScreenState extends State<MenuScreen> {
                                         Navigator.of(sheetContext).pop();
                                         _payCash();
                                       },
+                                      onPayCard: _payments.cardsEnabled
+                                          ? () {
+                                              Navigator.of(sheetContext).pop();
+                                              _payCard();
+                                            }
+                                          : null,
                                     ),
                                   ),
                                 ),
