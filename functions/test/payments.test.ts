@@ -12,7 +12,7 @@ import {
 import { setStaffPin } from "../src/handlers/pins.js";
 import { type Caller, membershipData } from "../src/lib/tenant.js";
 import type { ProviderRegistry } from "../src/payments/provider.js";
-import { CashProvider, CloverProvider, FakeCardProvider, StripeTerminalProvider } from "../src/payments/providers.js";
+import { CashProvider, CloverProvider, FakeCardProvider, StripeOnlineProvider, StripeTerminalProvider } from "../src/payments/providers.js";
 import { auditActions, caller, db, expectHttpsError, PEPPER, resetEmulators, seed, setOrg, u } from "./setup.js";
 
 const LOC = "orgs/org-a/locations/cambridge";
@@ -29,7 +29,7 @@ beforeEach(async () => {
   const cash = new CashProvider();
   const clover = new CloverProvider();
   const terminal = new StripeTerminalProvider();
-  registry = (id) => ({ cash, clover, stripe_terminal: terminal, fake_card: fake })[id];
+  registry = (id) => ({ cash, clover, stripe_terminal: terminal, fake_card: fake, stripe_online: new StripeOnlineProvider() })[id];
 
   await db().doc(`${LOC}/settings/payments`).set({
     ...ids, cardProvider: "fake_card", terminals: { front: { ref: "tmr_front", name: "Front counter" } },

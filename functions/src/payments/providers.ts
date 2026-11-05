@@ -66,6 +66,24 @@ export class StripeTerminalProvider implements PaymentProvider {
 }
 
 /**
+ * Card payments made on the ordering site through Stripe Checkout on the
+ * restaurant's connected Stripe account (orders/checkout.ts). Charges start
+ * from Checkout, not from here. Refunds will call Stripe's refund API on the
+ * connected account; until that is wired up and tested with a real test-mode
+ * account, refund online orders from the Stripe dashboard.
+ */
+export class StripeOnlineProvider implements PaymentProvider {
+  readonly id = "stripe_online" as const;
+  private fail(): never {
+    throw new ProviderNotConfigured("stripe_online", "online refunds aren't wired up yet; refund in Stripe.");
+  }
+  charge(): Promise<ChargeResult> { this.fail(); }
+  lookup(): Promise<ChargeResult | null> { this.fail(); }
+  cancel(): Promise<ChargeResult> { this.fail(); }
+  refund(): Promise<RefundResult> { this.fail(); }
+}
+
+/**
  * A pretend card terminal for tests and the local emulators. Never
  * available in a deployed project (see defaultRegistry).
  *
@@ -133,12 +151,14 @@ export function defaultRegistry(): ProviderRegistry {
   const cash = new CashProvider();
   const clover = new CloverProvider();
   const terminal = new StripeTerminalProvider();
+  const online = new StripeOnlineProvider();
   const fake = process.env.FUNCTIONS_EMULATOR === "true" ? new FakeCardProvider() : null;
   return (id) => {
     switch (id) {
       case "cash": return cash;
       case "clover": return clover;
       case "stripe_terminal": return terminal;
+      case "stripe_online": return online;
       case "fake_card":
         if (fake) return fake;
         throw new ProviderNotConfigured("fake_card", "the test terminal only runs on the emulator.");

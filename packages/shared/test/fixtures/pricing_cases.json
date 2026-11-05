@@ -1,0 +1,61 @@
+{
+  "_comment": "Shared by packages/shared/test/pricing_test.dart and functions/test/pricing.test.ts so the POS and the server price orders the same way. Lines are [lineTotalCents, taxable].",
+  "cases": [
+    {
+      "name": "one Ontario drink",
+      "lines": [[550, true]],
+      "discounts": [],
+      "rates": [{"id": "hst", "name": "HST", "rate": 0.13}],
+      "expect": {"subtotalCents": 550, "discountCents": 0, "taxCents": 72, "totalCents": 622, "taxCents_each": [72]}
+    },
+    {
+      "name": "half a cent of tax rounds up",
+      "lines": [[50, true]],
+      "discounts": [],
+      "rates": [{"id": "hst", "name": "HST", "rate": 0.13}],
+      "expect": {"subtotalCents": 50, "discountCents": 0, "taxCents": 7, "totalCents": 57, "taxCents_each": [7]}
+    },
+    {
+      "name": "10% discount before tax",
+      "lines": [[1100, true]],
+      "discounts": [{"type": "percent", "value": 10}],
+      "rates": [{"id": "hst", "name": "HST", "rate": 0.13}],
+      "expect": {"subtotalCents": 1100, "discountCents": 110, "taxCents": 129, "totalCents": 1119, "taxCents_each": [129]}
+    },
+    {
+      "name": "an amount discount larger than the order",
+      "lines": [[300, true]],
+      "discounts": [{"type": "amount", "value": 1000}],
+      "rates": [{"id": "hst", "name": "HST", "rate": 0.13}],
+      "expect": {"subtotalCents": 300, "discountCents": 300, "taxCents": 0, "totalCents": 0, "taxCents_each": [0]}
+    },
+    {
+      "name": "discount shared with a non-taxable line",
+      "lines": [[1000, true], [500, false]],
+      "discounts": [{"type": "amount", "value": 300}],
+      "rates": [{"id": "gst", "name": "GST", "rate": 0.05}],
+      "expect": {"subtotalCents": 1500, "discountCents": 300, "taxCents": 40, "totalCents": 1240, "taxCents_each": [40]}
+    },
+    {
+      "name": "Quebec GST and QST each rounded",
+      "lines": [[1299, true]],
+      "discounts": [],
+      "rates": [{"id": "gst", "name": "GST", "rate": 0.05}, {"id": "qst", "name": "QST", "rate": 0.09975}],
+      "expect": {"subtotalCents": 1299, "discountCents": 0, "taxCents": 195, "totalCents": 1494, "taxCents_each": [65, 130]}
+    },
+    {
+      "name": "two discounts apply one after the other",
+      "lines": [[2000, true]],
+      "discounts": [{"type": "percent", "value": 50}, {"type": "amount", "value": 250}],
+      "rates": [{"id": "hst", "name": "HST", "rate": 0.13}],
+      "expect": {"subtotalCents": 2000, "discountCents": 1250, "taxCents": 98, "totalCents": 848, "taxCents_each": [98]}
+    },
+    {
+      "name": "no tax set up",
+      "lines": [[999, true]],
+      "discounts": [],
+      "rates": [],
+      "expect": {"subtotalCents": 999, "discountCents": 0, "taxCents": 0, "totalCents": 999, "taxCents_each": []}
+    }
+  ]
+}

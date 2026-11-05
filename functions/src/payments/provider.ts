@@ -20,7 +20,9 @@
  * cash go through here.
  */
 
-export const PROVIDER_IDS = ["cash", "clover", "stripe_terminal", "fake_card"] as const;
+export const PROVIDER_IDS = ["cash", "clover", "stripe_terminal", "fake_card", "stripe_online"] as const;
+/** Providers a location can pick for its counter terminals. stripe_online is the ordering site's. */
+export const TERMINAL_PROVIDER_IDS = ["clover", "stripe_terminal", "fake_card"] as const;
 export type ProviderId = (typeof PROVIDER_IDS)[number];
 
 export type ChargeStatus = "pending" | "succeeded" | "failed" | "canceled";
