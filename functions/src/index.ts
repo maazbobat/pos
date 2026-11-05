@@ -31,6 +31,7 @@ import type { Caller } from "./lib/tenant.js";
 import { recordIncident } from "./lib/platform.js";
 import { StripeOnlineCheckoutGateway } from "./orders/checkout.js";
 import { defaultRegistry } from "./payments/providers.js";
+import { stripeReaderSetupApi, stripeTerminalApi } from "./payments/stripe_terminal.js";
 
 // Montreal, so tenant data and compute stay in Canada.
 setGlobalOptions({ region: "northamerica-northeast1", maxInstances: 20 });
@@ -47,7 +48,14 @@ const MANAGER_APP_URL = defineString("MANAGER_APP_URL", { default: "http://local
 const ORDERING_SITE_URL = defineString("ORDERING_SITE_URL", { default: "http://localhost:8083" });
 const STRIPE_CONNECT_WEBHOOK_SECRET = defineSecret("STRIPE_CONNECT_WEBHOOK_SECRET");
 
-const providers = defaultRegistry();
+// Counter card payments use the platform's Stripe key on each restaurant's
+// connected account. No key (local emulators) means Stripe Terminal answers
+// "not set up" instead of calling Stripe.
+const stripeKey = () => STRIPE_SECRET_KEY.value() || null;
+const providers = defaultRegistry(() => {
+  const key = stripeKey();
+  return key ? stripeTerminalApi(new Stripe(key)) : null;
+});
 const aggregators = defaultAggregators();
 const gateway = () => new StripeBillingGateway(new Stripe(STRIPE_SECRET_KEY.value()));
 
@@ -135,16 +143,22 @@ export const enforceBillingAccess = onSchedule("every 60 minutes", async () => {
 });
 
 // Card payments, refunds and voids
-export const startCardPayment = callable((c, d) => payments.startCardPayment(c, d, providers));
-export const refreshPayment = callable((c, d) => payments.refreshPayment(c, d, providers));
-export const cancelCardPayment = callable((c, d) => payments.cancelCardPayment(c, d, providers));
-export const refundPayment = onCall({ secrets: [PIN_PEPPER] }, (req) =>
+const withStripe = <T>(handler: Handler<T>) =>
+  onCall({ secrets: [STRIPE_SECRET_KEY] }, (req) => handler(caller(req), req.data));
+export const startCardPayment = withStripe((c, d) => payments.startCardPayment(c, d, providers));
+export const refreshPayment = withStripe((c, d) => payments.refreshPayment(c, d, providers));
+export const cancelCardPayment = withStripe((c, d) => payments.cancelCardPayment(c, d, providers));
+export const registerCardReader = withStripe((c, d) => {
+  const key = stripeKey();
+  return payments.registerCardReader(c, d, key ? stripeReaderSetupApi(new Stripe(key)) : null);
+});
+export const refundPayment = onCall({ secrets: [PIN_PEPPER, STRIPE_SECRET_KEY] }, (req) =>
   payments.refundPayment(caller(req), req.data, providers, PIN_PEPPER.value()),
 );
 export const voidOrder = onCall({ secrets: [PIN_PEPPER] }, (req) =>
   payments.voidOrder(caller(req), req.data, PIN_PEPPER.value()),
 );
-export const recoverPendingPayments = onSchedule("every 10 minutes", async () => {
+export const recoverPendingPayments = onSchedule({ schedule: "every 10 minutes", secrets: [STRIPE_SECRET_KEY] }, async () => {
   await payments.recoverPendingPayments(providers);
 });
 

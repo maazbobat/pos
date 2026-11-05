@@ -39,6 +39,8 @@ export interface ChargeRequest {
   idempotencyKey: string;
   /** The processor's ID for the terminal or reader, from the location's payment settings. */
   terminalRef: string | null;
+  /** The restaurant's own account at the processor (Stripe: its connected acct_ ID). */
+  account?: string | null;
 }
 
 export interface ChargeResult {
@@ -51,6 +53,7 @@ export interface ChargeRef {
   idempotencyKey: string;
   providerRef: string | null;
   terminalRef?: string | null;
+  account?: string | null;
 }
 
 export interface RefundRequest {
@@ -58,6 +61,7 @@ export interface RefundRequest {
   providerRef: string | null;
   amountCents: number;
   idempotencyKey: string;
+  account?: string | null;
 }
 
 export interface RefundResult {

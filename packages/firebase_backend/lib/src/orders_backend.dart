@@ -251,3 +251,179 @@ class FirebaseStorefrontBackend implements StorefrontBackend {
     }),
   );
 }
+
+class FirestoreCounterBackend implements CounterBackend {
+  FirestoreCounterBackend(this._db, this._auth, this._fns);
+  final FirebaseFirestore _db;
+  final FirebaseAuth _auth;
+  final FirebaseFunctions _fns;
+
+  Map<String, Object?> _ids(Order o) => {
+    'orgId': o.orgId,
+    'locationId': o.locationId,
+    'orderId': o.id,
+  };
+
+  @override
+  Stream<PaymentSettings> paymentSettings(String orgId, String locationId) =>
+      _db
+          .doc(FirestorePaths.settings(orgId, locationId, 'payments'))
+          .snapshots()
+          .map((s) => PaymentSettings.fromMap(s.data() ?? const {}));
+
+  @override
+  Stream<HardwareSettings> hardware(String orgId, String locationId) => _db
+      .doc(FirestorePaths.settings(orgId, locationId, 'hardware'))
+      .snapshots()
+      .map((s) => HardwareSettings.fromMap(s.data() ?? const {}));
+
+  @override
+  Future<void> saveHardware(
+    String orgId,
+    String locationId,
+    HardwareSettings settings,
+  ) async {
+    final ref = _db.doc(FirestorePaths.settings(orgId, locationId, 'hardware'));
+    // Replace the printer map whole, so a removed printer goes away.
+    await ref.set(
+      {
+        'orgId': orgId,
+        'locationId': locationId,
+        ...settings.toMap(),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'updatedBy': _auth.currentUser?.uid,
+      },
+      SetOptions(
+        mergeFields: [
+          'orgId',
+          'locationId',
+          'printers',
+          'receipt',
+          'autoPrintReceipt',
+          'autoPrintKitchen',
+          'updatedAt',
+          'updatedBy',
+        ],
+      ),
+    );
+  }
+
+  @override
+  Future<void> placeUnpaidOrder(PosOrderDraft draft) async {
+    final uid = _auth.currentUser!.uid;
+    await _db
+        .doc(FirestorePaths.order(draft.orgId, draft.locationId, draft.orderId))
+        .set({
+          ...draft.toMap(createdBy: uid, paymentStatus: PaymentStatus.unpaid),
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+  }
+
+  @override
+  Future<CardPaymentState> startCardPayment(
+    Order order, {
+    required int amountCents,
+    required int tipCents,
+    required String idempotencyKey,
+    required String readerId,
+  }) async => CardPaymentState.fromMap(
+    await _call(_fns, Callables.startCardPayment, {
+      ..._ids(order),
+      'amountCents': amountCents,
+      'tipCents': tipCents,
+      'idempotencyKey': idempotencyKey,
+      'terminalId': readerId,
+    }),
+  );
+
+  @override
+  Future<CardPaymentState> refreshPayment(
+    Order order,
+    String paymentId,
+  ) async => CardPaymentState.fromMap(
+    await _call(_fns, Callables.refreshPayment, {
+      ..._ids(order),
+      'paymentId': paymentId,
+    }),
+  );
+
+  @override
+  Future<CardPaymentState> cancelCardPayment(
+    Order order,
+    String paymentId,
+  ) async => CardPaymentState.fromMap(
+    await _call(_fns, Callables.cancelCardPayment, {
+      ..._ids(order),
+      'paymentId': paymentId,
+    }),
+  );
+
+  @override
+  Stream<List<OrderPayment>> payments(Order order) => _db
+      .collection(
+        FirestorePaths.payments(order.orgId, order.locationId, order.id),
+      )
+      .snapshots()
+      .map(
+        (q) => [
+          for (final d in q.docs) OrderPayment.fromMap(d.id, _plain(d.data())),
+        ],
+      );
+
+  @override
+  Future<String> refundPayment(
+    Order order, {
+    required String paymentId,
+    required int amountCents,
+    required String reason,
+    required String idempotencyKey,
+    String? managerPin,
+  }) async {
+    final r = await _call(_fns, Callables.refundPayment, {
+      ..._ids(order),
+      'paymentId': paymentId,
+      'amountCents': amountCents,
+      'reason': reason,
+      'idempotencyKey': idempotencyKey,
+      'managerPin': ?managerPin,
+    });
+    return r['status'] as String? ?? 'failed';
+  }
+
+  @override
+  Future<void> voidOrder(
+    Order order, {
+    required String reason,
+    String? managerPin,
+  }) async {
+    await _call(_fns, Callables.voidOrder, {
+      ..._ids(order),
+      'reason': reason,
+      'managerPin': ?managerPin,
+    });
+  }
+
+  @override
+  Future<CardReader> registerCardReader(
+    String orgId,
+    String locationId, {
+    required String readerId,
+    required String name,
+    required String registrationCode,
+    String? addressLine1,
+    String? city,
+    String? postalCode,
+  }) async {
+    final r = await _call(_fns, Callables.registerCardReader, {
+      'orgId': orgId,
+      'locationId': locationId,
+      'terminalId': readerId,
+      'name': name,
+      'registrationCode': registrationCode,
+      'addressLine1': ?addressLine1,
+      'city': ?city,
+      'postalCode': ?postalCode,
+    });
+    return CardReader(id: readerId, name: name, model: r['model'] as String?);
+  }
+}

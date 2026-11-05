@@ -9,6 +9,9 @@ import {
   type RefundRequest,
   type RefundResult,
 } from "./provider.js";
+import { StripeTerminalProvider, type TerminalApi } from "./stripe_terminal.js";
+
+export { StripeTerminalProvider };
 
 /** Cash changes hands at the counter, so every call succeeds at once. */
 export class CashProvider implements PaymentProvider {
@@ -41,23 +44,6 @@ export class CloverProvider implements PaymentProvider {
   readonly id = "clover" as const;
   private fail(): never {
     throw new ProviderNotConfigured("clover", "Clover integration is waiting on Clover's certification.");
-  }
-  charge(): Promise<ChargeResult> { this.fail(); }
-  lookup(): Promise<ChargeResult | null> { this.fail(); }
-  cancel(): Promise<ChargeResult> { this.fail(); }
-  refund(): Promise<RefundResult> { this.fail(); }
-}
-
-/**
- * Stripe Terminal, for smart readers driven from the server: create a
- * card_present PaymentIntent with our idempotency key (and the key in its
- * metadata for `lookup`), then ask the reader to process it. Needs a Stripe
- * Terminal location and registered readers per store.
- */
-export class StripeTerminalProvider implements PaymentProvider {
-  readonly id = "stripe_terminal" as const;
-  private fail(): never {
-    throw new ProviderNotConfigured("stripe_terminal", "Stripe Terminal readers aren't registered yet.");
   }
   charge(): Promise<ChargeResult> { this.fail(); }
   lookup(): Promise<ChargeResult | null> { this.fail(); }
@@ -147,17 +133,17 @@ export class FakeCardProvider implements PaymentProvider {
  * The providers a deployed Function uses. The fake terminal exists only
  * under the emulator, so a location can never be pointed at it in production.
  */
-export function defaultRegistry(): ProviderRegistry {
+export function defaultRegistry(terminalApi: () => TerminalApi | null = () => null): ProviderRegistry {
   const cash = new CashProvider();
   const clover = new CloverProvider();
-  const terminal = new StripeTerminalProvider();
   const online = new StripeOnlineProvider();
   const fake = process.env.FUNCTIONS_EMULATOR === "true" ? new FakeCardProvider() : null;
   return (id) => {
     switch (id) {
       case "cash": return cash;
       case "clover": return clover;
-      case "stripe_terminal": return terminal;
+      // Built per call: the Stripe key is a secret only readable inside a running Function.
+      case "stripe_terminal": return new StripeTerminalProvider(terminalApi());
       case "stripe_online": return online;
       case "fake_card":
         if (fake) return fake;

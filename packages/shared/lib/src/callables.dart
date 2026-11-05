@@ -44,6 +44,7 @@ abstract final class Callables {
   static const cancelCardPayment = 'cancelCardPayment';
   static const refundPayment = 'refundPayment';
   static const voidOrder = 'voidOrder';
+  static const registerCardReader = 'registerCardReader';
 
   // Online ordering. The last three are public: guests don't sign in.
   static const updateOnlineOrdering = 'updateOnlineOrdering';

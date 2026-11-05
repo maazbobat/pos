@@ -181,10 +181,14 @@ class CartPanel extends StatelessWidget {
     required this.cart,
     required this.onChanged,
     required this.onPayCash,
+    this.onPayCard,
   });
   final Cart cart;
   final ValueChanged<Cart> onChanged;
   final VoidCallback onPayCash;
+
+  /// Null when this location has no card reader set up.
+  final VoidCallback? onPayCard;
 
   Future<void> _discount(BuildContext context) async {
     final result = await showDialog<Discount?>(
@@ -293,21 +297,43 @@ class CartPanel extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 8),
-                FilledButton.icon(
-                  key: const Key('pay-cash'),
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(56),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.icon(
+                        key: const Key('pay-cash'),
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(56),
+                        ),
+                        onPressed: cart.isEmpty ? null : onPayCash,
+                        icon: const Icon(Icons.payments_outlined),
+                        label: Text('Cash ${formatCad(totals.totalCents)}'),
+                      ),
+                    ),
+                    if (onPayCard != null) ...[
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: FilledButton.icon(
+                          key: const Key('pay-card'),
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size.fromHeight(56),
+                          ),
+                          onPressed: cart.isEmpty ? null : onPayCard,
+                          icon: const Icon(Icons.credit_card),
+                          label: const Text('Card'),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                if (onPayCard == null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'To take cards, a manager adds a card reader in the manager app.',
+                    style: theme.textTheme.bodySmall,
+                    textAlign: TextAlign.center,
                   ),
-                  onPressed: cart.isEmpty ? null : onPayCash,
-                  icon: const Icon(Icons.payments_outlined),
-                  label: Text('Cash ${formatCad(totals.totalCents)}'),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Card payments arrive with the Clover and Stripe Terminal setup.',
-                  style: theme.textTheme.bodySmall,
-                  textAlign: TextAlign.center,
-                ),
+                ],
               ],
             ),
           ),

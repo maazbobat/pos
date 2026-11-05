@@ -12,6 +12,7 @@
  *   refundPayment      manager only, or a manager's PIN on a device; audited
  *   voidOrder          manager only, or a manager's PIN on a device; audited
  *   recoverPendingPayments  scheduled: settles payments we never heard back about
+ *   registerCardReader  manager only: pairs a Stripe smart reader with a counter
  *
  * The payment ID is derived from the order and the POS's idempotency key, so
  * a retry after a dropped connection finds the first attempt instead of
@@ -43,6 +44,7 @@ import {
   type ProviderRegistry,
   TERMINAL_PROVIDER_IDS,
 } from "../payments/provider.js";
+import type { ReaderAddress, ReaderSetupApi } from "../payments/stripe_terminal.js";
 import { verifyManagerPin } from "./pins.js";
 
 const SELLERS: readonly Role[] = ["owner", "franchise_owner", "store_manager", "cashier", "device"];
@@ -146,7 +148,21 @@ async function providerFor(tx: Transaction, ref: OrderRef, terminalId: string | 
     terminalRef = terminals[terminalId]?.ref ?? null;
     if (!terminalRef) throw fail.notFound("That terminal isn't set up at this location.");
   }
-  return { provider, terminalRef };
+  let account: string | null = null;
+  if (provider === "stripe_terminal") account = await stripeAccountOf(tx, ref.orgId, ref.locationId);
+  return { provider, terminalRef, account };
+}
+
+/**
+ * The restaurant's connected Stripe account. Counter and online payments go
+ * to the same account, which only the owner sets (updateOnlineOrdering), so
+ * a manager editing payment settings can't redirect where money goes.
+ */
+async function stripeAccountOf(tx: Transaction | null, orgId: string, locationId: string): Promise<string | null> {
+  const ref = db().doc(`${paths.location(orgId, locationId)}/settings/onlineOrdering`);
+  const snap = tx ? await tx.get(ref) : await ref.get();
+  const v = snap.get("stripeAccountId");
+  return typeof v === "string" && v.startsWith("acct_") ? v : null;
 }
 
 /**
@@ -221,7 +237,7 @@ export async function startCardPayment(
     const sums = await sumPayments(tx, ref);
     const due = total - sums.succeeded - sums.pending;
     if (amountCents > due) throw fail.invalid(`Only ${due} cents are left to pay on this order.`);
-    const { provider, terminalRef } = await providerFor(tx, ref, terminalId);
+    const { provider, terminalRef, account } = await providerFor(tx, ref, terminalId);
 
     tx.create(payRef, {
       orgId: ref.orgId,
@@ -231,6 +247,7 @@ export async function startCardPayment(
       provider,
       terminalId,
       terminalRef,
+      providerAccount: account,
       amountCents,
       tipCents,
       refundedCents: 0,
@@ -243,7 +260,7 @@ export async function startCardPayment(
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
-    return { provider, terminalRef, existing: undefined };
+    return { provider, terminalRef, account, existing: undefined };
   });
 
   if (start.existing) {
@@ -264,6 +281,7 @@ export async function startCardPayment(
       currency: "cad",
       idempotencyKey: key,
       terminalRef: start.terminalRef,
+      account: start.account,
     });
   } catch (err) {
     if (err instanceof ProviderNotConfigured) {
@@ -307,6 +325,7 @@ export async function refreshPayment(caller: Caller, data: unknown, registry: Pr
     idempotencyKey: pay.idempotencyKey,
     providerRef: pay.providerRef ?? null,
     terminalRef: pay.terminalRef ?? null,
+    account: pay.providerAccount ?? null,
   });
   if (!result) return { paymentId, status: "pending" };
   const status = await settlePayment(ref, paymentId, result);
@@ -320,6 +339,7 @@ export async function cancelCardPayment(caller: Caller, data: unknown, registry:
     idempotencyKey: pay.idempotencyKey,
     providerRef: pay.providerRef ?? null,
     terminalRef: pay.terminalRef ?? null,
+    account: pay.providerAccount ?? null,
   });
   // The guest may have tapped just before the cancel arrived.
   const status = await settlePayment(ref, paymentId, result);
@@ -413,7 +433,12 @@ export async function refundPayment(
       reason,
       target: { orderId: ref.orderId, paymentId, refundId: id, amountCents },
     });
-    return { provider, providerRef: (pay.get("providerRef") as string | null) ?? null, existing: undefined };
+    return {
+      provider,
+      providerRef: (pay.get("providerRef") as string | null) ?? null,
+      account: (pay.get("providerAccount") as string | null | undefined) ?? null,
+      existing: undefined,
+    };
   });
   if (started.existing) return { refundId: id, status: started.existing.status };
 
@@ -421,7 +446,9 @@ export async function refundPayment(
   let providerRef: string | null = null;
   let failureReason: string | null = null;
   try {
-    const r = await registry(started.provider).refund({ paymentId, providerRef: started.providerRef, amountCents, idempotencyKey: key });
+    const r = await registry(started.provider).refund({
+      paymentId, providerRef: started.providerRef, amountCents, idempotencyKey: key, account: started.account,
+    });
     status = r.status;
     providerRef = r.providerRef;
     failureReason = r.failureReason ?? null;
@@ -535,6 +562,7 @@ export async function recoverPendingPayments(registry: ProviderRegistry, now = D
         idempotencyKey: pay.idempotencyKey,
         providerRef: pay.providerRef ?? null,
         terminalRef: pay.terminalRef ?? null,
+        account: pay.providerAccount ?? null,
       });
       if (result && result.status !== "pending") {
         await settlePayment(ref, doc.id, result);
@@ -553,4 +581,92 @@ export async function recoverPendingPayments(registry: ProviderRegistry, now = D
   }
   if (report.checked > 0) logger.info("Payment recovery", { ...report });
   return report;
+}
+
+// ---------------------------------------------------------------------------
+// Card readers
+// ---------------------------------------------------------------------------
+
+export interface RegisteredReader {
+  terminalId: string;
+  readerRef: string;
+  model: string;
+}
+
+/**
+ * Registers a Stripe smart reader for a counter. A manager types the three
+ * words the reader shows (Settings, then Generate pairing code), and the
+ * reader joins the restaurant's own Stripe account. The first reader at a
+ * store also creates its Stripe Terminal location, which needs the street
+ * address. Turns card payments on at the location. Audited.
+ */
+export async function registerCardReader(
+  caller: Caller,
+  data: unknown,
+  api: ReaderSetupApi | null,
+): Promise<RegisteredReader> {
+  const uid = requireUid(caller);
+  const input = asInput(data);
+  const orgId = docId(input, "orgId");
+  const locationId = docId(input, "locationId");
+  const terminalId = docId(input, "terminalId");
+  const name = str(input, "name", { max: 60 });
+  const registrationCode = str(input, "registrationCode", { min: 3, max: 100 }).toLowerCase();
+  if (!/^[a-z]+(-[a-z]+)*$/.test(registrationCode)) {
+    throw fail.invalid("registrationCode is the words the reader shows, joined by hyphens.");
+  }
+
+  const settingsRef = db().doc(paymentPaths.settings(orgId, locationId));
+  const before = await db().runTransaction(async (tx) => {
+    const member = await requireActiveMember(tx, orgId, uid);
+    if (member.kind !== "user" || !isManager(roleAt(member, locationId))) throw fail.denied("A manager has to do that.");
+    await requireWritableOrg(tx, orgId);
+    const loc = await requireActiveLocation(tx, orgId, locationId);
+    const account = await stripeAccountOf(tx, orgId, locationId);
+    const settings = (await tx.get(settingsRef)).data() ?? {};
+    return { loc, account, stripeLocation: (settings.stripeTerminalLocation as string | undefined) ?? null };
+  });
+  if (!api) throw fail.precondition("Stripe isn't set up for this project yet.");
+  if (!before.account) throw fail.precondition("The owner has to connect the restaurant's Stripe account first.");
+
+  let stripeLocation = before.stripeLocation;
+  if (!stripeLocation) {
+    const address: ReaderAddress = {
+      line1: str(input, "addressLine1", { max: 120 }),
+      city: str(input, "city", { max: 80 }),
+      province: (before.loc.province as string | undefined) ?? str(input, "province", { min: 2, max: 2 }),
+      postalCode: str(input, "postalCode", { min: 6, max: 7 }).toUpperCase(),
+    };
+    if (!/^[A-Z]\d[A-Z] ?\d[A-Z]\d$/.test(address.postalCode)) throw fail.invalid("postalCode must look like N1R 5S2.");
+    stripeLocation = await api.createLocation(before.account, (before.loc.name as string | undefined) ?? locationId, address);
+  }
+
+  let reader: { id: string; deviceType: string };
+  try {
+    reader = await api.registerReader(before.account, registrationCode, name, stripeLocation);
+  } catch (err) {
+    logger.warn("Reader registration failed", { orgId, locationId, err: String(err) });
+    // Keep a location we just made, so the next try doesn't make another.
+    await settingsRef.set({ orgId, locationId, stripeTerminalLocation: stripeLocation }, { merge: true });
+    throw fail.invalid("Stripe didn't accept that code. Generate a new one on the reader and try again.");
+  }
+
+  await db().runTransaction(async (tx) => {
+    tx.set(settingsRef, {
+      orgId,
+      locationId,
+      cardProvider: "stripe_terminal",
+      stripeTerminalLocation: stripeLocation,
+      terminals: { [terminalId]: { ref: reader.id, name, model: reader.deviceType } },
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    audit(tx, orgId, {
+      action: "payment.reader_registered",
+      actorUid: uid,
+      actorKind: "user",
+      locationId,
+      target: { terminalId, readerRef: reader.id, model: reader.deviceType },
+    });
+  });
+  return { terminalId, readerRef: reader.id, model: reader.deviceType };
 }

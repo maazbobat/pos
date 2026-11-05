@@ -11,6 +11,7 @@ resolution: workspace
 dependencies:
   flutter:
     sdk: flutter
+  http: ^1.6.0
   pos_shared:
   pos_firebase_backend:
 

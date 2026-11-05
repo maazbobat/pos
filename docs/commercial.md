@@ -69,11 +69,14 @@ all in whole cents, and none of them ever returns or stores card data.
 | --- | --- |
 | `cash` | Done. The POS writes cash payments directly so they work offline; the rules check their shape and use the idempotency key as the document ID |
 | `clover` | Interface only. Throws "not set up" until Clover's certification is done |
-| `stripe_terminal` | Interface only. Needs Stripe Terminal locations and readers |
+| `stripe_terminal` | Done. Server-driven smart readers on the restaurant's connected Stripe account; cards and Interac. See [counter.md](counter.md) |
 | `fake_card` | A pretend terminal for tests and the local emulators only. Refused in a deployed project |
 
 A location picks its card provider in `locations/{id}/settings/payments`
-(`cardProvider`, `terminals: {id: {ref, name}}`), which managers edit.
+(`cardProvider`, `terminals: {id: {ref, name, model}}`, `stripeTerminalLocation`).
+Managers pair Stripe readers through `registerCardReader`. The Stripe account
+is never in that document: it comes from the owner-only online ordering
+settings, so a manager can't redirect where card money goes.
 
 | Function | Who | What |
 | --- | --- | --- |
@@ -82,6 +85,7 @@ A location picks its card provider in `locations/{id}/settings/payments`
 | `cancelCardPayment` | sellers | Stops a charge the guest hasn't completed |
 | `refundPayment` | managers, or a device with a manager's PIN | Partial or full, tip included, never more than was paid. Audited with the reason |
 | `voidOrder` | managers, or a device with a manager's PIN | Only once nothing is left paid on the order. Audited |
+| `registerCardReader` | managers signed in as themselves | Pairs a Stripe smart reader with a counter from the code it shows. Audited |
 | `recoverPendingPayments` | every 10 min | Settles charges we never heard back about. A charge the provider never saw fails after 15 min; one still pending at the provider after 30 min raises an incident |
 
 A manager PIN typed on a device counts toward the same 5-tries lockout as
@@ -90,7 +94,7 @@ signing in, and a cashier's PIN counts as wrong.
 Reconciliation today means recovering interrupted charges and keeping each
 order's `paymentStatus` (`unpaid`, `paid`, `partially_refunded`, `refunded`)
 in line with its payments. Matching against the processor's settlement
-reports comes with the Clover and Stripe Terminal adapters.
+reports is still to do.
 
 ## Audit log and platform support access
 

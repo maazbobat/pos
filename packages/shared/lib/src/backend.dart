@@ -6,6 +6,7 @@ import 'models/membership.dart';
 import 'models/organization.dart';
 import 'models/staff.dart';
 import 'orders/orders_backend.dart';
+import 'payments/counter_backend.dart';
 import 'role.dart';
 
 /// Everything the apps need from Firebase, behind interfaces so screens can
@@ -181,6 +182,7 @@ class Backend {
     required this.billing,
     required this.platform,
     required this.orders,
+    required this.counter,
   });
   final AuthGateway auth;
   final OnboardingFunctions functions;
@@ -188,4 +190,5 @@ class Backend {
   final BillingBackend billing;
   final PlatformBackend platform;
   final OrdersBackend orders;
+  final CounterBackend counter;
 }

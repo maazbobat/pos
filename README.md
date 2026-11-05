@@ -8,7 +8,8 @@ tenant schema and rules, onboarding, menu setup, billing, payments, support
 access and monitoring ([docs/commercial.md](docs/commercial.md)). Step 4 adds
 order taking with cash on the POS, a kitchen display, each restaurant's own
 ordering site, and the delivery-aggregator interface
-([docs/orders.md](docs/orders.md)).
+([docs/orders.md](docs/orders.md)). Card payments on Stripe readers and Epson
+receipt and kitchen printing are in [docs/counter.md](docs/counter.md).
 
 ## Layout
 
