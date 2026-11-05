@@ -4,12 +4,18 @@
  * A platform admin creates an organization and invites its first owner (the
  * admin portal will call this). From then on the owner runs it: creating,
  * closing and reopening locations. Self-serve sign-up can reuse
- * createOrgDocs once billing exists (roadmap step 3).
+ * the same documents once it exists.
+ *
+ * New orgs start on the platform's free trial (billing/access.ts). Each org
+ * also gets a platformOrgs summary so the admin portal can list tenants
+ * without reading their data.
  */
 import { FieldValue, type Transaction } from "firebase-admin/firestore";
-import { audit } from "../lib/audit.js";
+import { audit, auditPlatform } from "../lib/audit.js";
 import { fail } from "../lib/errors.js";
 import { db } from "../lib/firebase.js";
+import { syncPlatformOrg } from "../lib/platform.js";
+import { initialBilling } from "./billing.js";
 import {
   type Caller,
   isPlatformAdmin,
@@ -64,10 +70,25 @@ export async function createOrganization(caller: Caller, data: unknown): Promise
   const orgId = orgRef.id;
   const ownerInvite = await db().runTransaction(async (tx) => {
     const now = FieldValue.serverTimestamp();
-    tx.create(orgRef, { name, type, status: "active", accessLevel: "full", plan: "trial", createdBy: uid, createdAt: now });
-    tx.create(db().doc(`${paths.org(orgId)}/billing/subscription`), { orgId, status: "trialing", plan: "trial", createdAt: now });
+    const billing = initialBilling(orgId, Date.now());
+    tx.create(orgRef, { name, type, status: "active", accessLevel: billing.accessLevel, plan: billing.plan, createdBy: uid, createdAt: now });
+    tx.create(db().doc(`${paths.org(orgId)}/billing/subscription`), billing);
     tx.create(db().doc(`${paths.org(orgId)}/config/brand`), { orgId, name, createdAt: now, createdBy: uid });
-    audit(tx, orgId, { action: "org.created", actorUid: uid, target: { name, type, platformAdmin: true } });
+    syncPlatformOrg(tx, orgId, {
+      name,
+      type,
+      status: "active",
+      accessLevel: billing.accessLevel,
+      plan: billing.plan,
+      billingStatus: billing.status,
+      billingSource: billing.source,
+      trialEndsAt: billing.trialEndsAt,
+      graceEndsAt: null,
+      ownerEmail,
+      locationCount: 0,
+      createdAt: now,
+    });
+    auditPlatform(tx, orgId, { action: "org.created", actorUid: uid, target: { name, type } });
     return writeInvite(tx, orgId, {
       email: ownerEmail,
       displayName: ownerName,
@@ -104,6 +125,7 @@ export async function createLocation(caller: Caller, data: unknown): Promise<{ l
     const now = FieldValue.serverTimestamp();
     tx.create(locRef, { ...ids, name, province, timezone, address, status: "active", createdBy: uid, createdAt: now });
     tx.create(db().doc(`${locRef.path}/settings/tax`), { ...ids, ...defaultTaxSettings(province), createdAt: now });
+    syncPlatformOrg(tx, orgId, { locationCount: FieldValue.increment(1) });
     audit(tx, orgId, { action: "location.created", actorUid: uid, locationId, target: { name, province } });
   });
   return { locationId };
