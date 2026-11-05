@@ -8,13 +8,170 @@ import 'pos_shared.dart';
 
 class FakeBackend {
   FakeBackend() {
-    backend = Backend(auth: auth, functions: functions, data: data);
+    backend = Backend(
+      auth: auth,
+      functions: functions,
+      data: data,
+      billing: billing,
+      platform: platform,
+    );
   }
 
   late final Backend backend;
   final FakeAuth auth = FakeAuth();
   final FakeFunctions functions = FakeFunctions();
   late final FakeData data = FakeData(auth);
+  final FakeBilling billing = FakeBilling();
+  final FakePlatform platform = FakePlatform();
+}
+
+/// A broadcast of "something changed", for the fakes' streams.
+class _Changes {
+  final _c = StreamController<void>.broadcast();
+  void notify() => _c.add(null);
+  Stream<T> watch<T>(T Function() read) async* {
+    yield read();
+    yield* _c.stream.map((_) => read());
+  }
+}
+
+class FakeBilling implements BillingBackend {
+  final _changes = _Changes();
+  final List<String> calls = [];
+  final Map<String, Subscription> subscriptions = {};
+  final Map<String, List<SupportGrant>> grants = {};
+  final Map<String, List<AuditEntry>> audit = {};
+
+  void notify() => _changes.notify();
+
+  @override
+  Stream<Subscription?> subscription(String orgId) =>
+      _changes.watch(() => subscriptions[orgId]);
+
+  @override
+  Future<Uri> startCheckout(String orgId, Plan plan) async {
+    calls.add('startCheckout:$orgId:${plan.name}');
+    return Uri.parse('https://checkout.stripe.test/${plan.name}');
+  }
+
+  @override
+  Future<Uri> openBillingPortal(String orgId) async {
+    calls.add('openBillingPortal:$orgId');
+    return Uri.parse('https://billing.stripe.test/$orgId');
+  }
+
+  @override
+  Stream<List<SupportGrant>> supportGrants(String orgId) =>
+      _changes.watch(() => grants[orgId] ?? const []);
+
+  @override
+  Future<void> revokeSupportAccess(String orgId, String adminUid) async {
+    calls.add('revokeSupportAccess:$orgId:$adminUid');
+    grants[orgId]?.removeWhere((g) => g.adminUid == adminUid);
+    notify();
+  }
+
+  @override
+  Stream<List<AuditEntry>> auditLog(String orgId, {int limit = 50}) =>
+      _changes.watch(() => audit[orgId] ?? const []);
+}
+
+class FakePlatform implements PlatformBackend {
+  final _changes = _Changes();
+  final List<String> calls = [];
+  final Set<String> admins = {};
+  final Map<String, TenantSummary> tenantsById = {};
+  final List<AuditEntry> auditEntries = [];
+  HealthSummary? healthSummary;
+  final List<Incident> incidents = [];
+  final Map<String, SupportGrant> grants = {}; // key: orgId/adminUid
+
+  void notify() => _changes.notify();
+
+  @override
+  Stream<bool> isPlatformAdmin(String uid) =>
+      _changes.watch(() => admins.contains(uid));
+  @override
+  Stream<List<TenantSummary>> tenants() =>
+      _changes.watch(() => tenantsById.values.toList());
+  @override
+  Stream<TenantSummary?> tenant(String orgId) =>
+      _changes.watch(() => tenantsById[orgId]);
+  @override
+  Stream<List<AuditEntry>> platformAudit({String? orgId, int limit = 50}) =>
+      _changes.watch(
+        () => [
+          for (final e in auditEntries)
+            if (orgId == null || e.orgId == orgId) e,
+        ],
+      );
+  @override
+  Stream<HealthSummary?> health() => _changes.watch(() => healthSummary);
+  @override
+  Stream<List<Incident>> openIncidents() =>
+      _changes.watch(() => List.of(incidents));
+  @override
+  Stream<SupportGrant?> mySupportGrant(String orgId, String adminUid) =>
+      _changes.watch(() => grants['$orgId/$adminUid']);
+
+  @override
+  Future<DateTime> grantSupportAccess(
+    String orgId, {
+    required String reason,
+    required int hours,
+  }) async {
+    calls.add('grantSupportAccess:$orgId:$hours:$reason');
+    final expiresAt = DateTime.now().add(Duration(hours: hours));
+    grants['$orgId/platform-admin'] = SupportGrant(
+      adminUid: 'platform-admin',
+      reason: reason,
+      expiresAt: expiresAt,
+    );
+    notify();
+    return expiresAt;
+  }
+
+  @override
+  Future<void> revokeMySupportAccess(String orgId) async {
+    calls.add('revokeMySupportAccess:$orgId');
+    grants.remove('$orgId/platform-admin');
+    notify();
+  }
+
+  @override
+  Future<void> setOrgSuspended(
+    String orgId, {
+    required bool suspended,
+    required String reason,
+  }) async => calls.add('setOrgSuspended:$orgId:$suspended:$reason');
+
+  @override
+  Future<void> setManualPlan(
+    String orgId, {
+    required Plan plan,
+    required bool active,
+    required String reason,
+  }) async => calls.add('setManualPlan:$orgId:${plan.name}:$active:$reason');
+
+  @override
+  Future<DateTime> extendTrial(
+    String orgId, {
+    required int days,
+    required String reason,
+  }) async {
+    calls.add('extendTrial:$orgId:$days:$reason');
+    return DateTime.now().add(Duration(days: days));
+  }
+
+  @override
+  Future<void> resolveIncident(
+    String incidentId, {
+    required String note,
+  }) async {
+    calls.add('resolveIncident:$incidentId:$note');
+    incidents.removeWhere((i) => i.id == incidentId);
+    notify();
+  }
 }
 
 class FakeAuth implements AuthGateway {

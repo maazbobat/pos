@@ -3,6 +3,7 @@ library;
 
 export 'src/backend.dart';
 export 'src/callables.dart';
+export 'src/commercial.dart';
 export 'src/firestore_paths.dart';
 export 'src/menu/location_menu.dart';
 export 'src/menu/menu_models.dart';

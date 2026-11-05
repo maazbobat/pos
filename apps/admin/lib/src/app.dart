@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:pos_shared/pos_shared.dart';
 
-/// Platform admin portal. For now: onboard a restaurant and hand its owner
-/// an invite. Only accounts in `platformAdmins` get past the server check;
-/// tenant management, billing and support grants come in roadmap step 3.
+import 'audit_page.dart';
+import 'health_page.dart';
+import 'onboard_screen.dart';
+import 'tenants_page.dart';
+
+/// Platform admin portal: tenants, their plans and status, support access,
+/// the platform audit log and health. Only accounts in `platformAdmins` get
+/// in, and every action is re-checked and audited server-side. Tenant data
+/// itself stays out of reach without a support grant.
 class AdminApp extends StatelessWidget {
   const AdminApp({super.key, required this.backend});
   final Backend backend;
@@ -22,9 +27,10 @@ class AdminApp extends StatelessWidget {
               body: Center(child: CircularProgressIndicator()),
             );
           }
-          return snap.data == null
+          final uid = snap.data;
+          return uid == null
               ? _SignIn(backend: backend)
-              : CreateOrgScreen(backend: backend);
+              : _AdminGate(key: ValueKey(uid), backend: backend, uid: uid);
         },
       ),
     );
@@ -100,140 +106,98 @@ class _SignInState extends State<_SignIn> {
   }
 }
 
-class CreateOrgScreen extends StatefulWidget {
-  const CreateOrgScreen({super.key, required this.backend});
+/// Signed-in accounts that aren't platform admins see nothing else.
+class _AdminGate extends StatelessWidget {
+  const _AdminGate({super.key, required this.backend, required this.uid});
   final Backend backend;
-
-  @override
-  State<CreateOrgScreen> createState() => _CreateOrgScreenState();
-}
-
-class _CreateOrgScreenState extends State<CreateOrgScreen> {
-  final _name = TextEditingController();
-  final _ownerEmail = TextEditingController();
-  final _ownerName = TextEditingController();
-  OrgType _type = OrgType.independent;
-  bool _busy = false;
-  String? _error;
-  String? _result;
-
-  @override
-  void dispose() {
-    _name.dispose();
-    _ownerEmail.dispose();
-    _ownerName.dispose();
-    super.dispose();
-  }
-
-  Future<void> _create() async {
-    setState(() {
-      _busy = true;
-      _error = null;
-      _result = null;
-    });
-    try {
-      final created = await widget.backend.functions.createOrganization(
-        name: _name.text.trim(),
-        type: _type,
-        ownerEmail: _ownerEmail.text.trim(),
-        ownerName: _ownerName.text.trim().isEmpty
-            ? null
-            : _ownerName.text.trim(),
-      );
-      setState(
-        () => _result = InviteLink(
-          orgId: created.orgId,
-          inviteId: created.ownerInvite.inviteId,
-          token: created.ownerInvite.token,
-        ).toPath(),
-      );
-    } catch (e) {
-      setState(
-        () => _error = e is BackendException
-            ? e.message
-            : 'Something went wrong.',
-      );
-    } finally {
-      setState(() => _busy = false);
-    }
-  }
+  final String uid;
 
   @override
   Widget build(BuildContext context) {
-    final result = _result;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Onboard a restaurant'),
-        actions: [
-          IconButton(
-            onPressed: widget.backend.auth.signOut,
-            icon: const Icon(Icons.logout),
-          ),
-        ],
-      ),
-      body: Center(
-        child: SizedBox(
-          width: 480,
-          child: ListView(
-            padding: const EdgeInsets.all(24),
-            children: [
-              TextField(
-                key: const Key('org-name'),
-                controller: _name,
-                decoration: const InputDecoration(
-                  labelText: 'Restaurant or company name',
-                ),
-              ),
-              DropdownButtonFormField<OrgType>(
-                initialValue: _type,
-                decoration: const InputDecoration(labelText: 'Type'),
-                items: const [
-                  DropdownMenuItem(
-                    value: OrgType.independent,
-                    child: Text('Independent'),
-                  ),
-                  DropdownMenuItem(value: OrgType.chain, child: Text('Chain')),
-                  DropdownMenuItem(
-                    value: OrgType.franchise,
-                    child: Text('Franchise'),
+    return StreamBuilder<bool>(
+      stream: backend.platform.isPlatformAdmin(uid),
+      builder: (context, snap) {
+        if (!snap.hasData) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snap.data != true) {
+          return Scaffold(
+            body: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('This account isn\'t a platform admin.'),
+                  TextButton(
+                    onPressed: backend.auth.signOut,
+                    child: const Text('Sign out'),
                   ),
                 ],
-                onChanged: (v) => setState(() => _type = v!),
               ),
-              TextField(
-                key: const Key('owner-email'),
-                controller: _ownerEmail,
-                decoration: const InputDecoration(labelText: 'Owner email'),
+            ),
+          );
+        }
+        return AdminHome(backend: backend, uid: uid);
+      },
+    );
+  }
+}
+
+class AdminHome extends StatefulWidget {
+  const AdminHome({super.key, required this.backend, required this.uid});
+  final Backend backend;
+  final String uid;
+
+  @override
+  State<AdminHome> createState() => _AdminHomeState();
+}
+
+class _AdminHomeState extends State<AdminHome> {
+  int _index = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final pages = [
+      TenantsPage(backend: widget.backend, uid: widget.uid),
+      HealthPage(backend: widget.backend),
+      AuditPage(backend: widget.backend),
+      CreateOrgScreen(backend: widget.backend),
+    ];
+    return Scaffold(
+      body: Row(
+        children: [
+          NavigationRail(
+            selectedIndex: _index,
+            labelType: NavigationRailLabelType.all,
+            onDestinationSelected: (i) => setState(() => _index = i),
+            trailing: IconButton(
+              tooltip: 'Sign out',
+              onPressed: widget.backend.auth.signOut,
+              icon: const Icon(Icons.logout),
+            ),
+            destinations: const [
+              NavigationRailDestination(
+                icon: Icon(Icons.storefront_outlined),
+                label: Text('Tenants'),
               ),
-              TextField(
-                key: const Key('owner-name'),
-                controller: _ownerName,
-                decoration: InputDecoration(
-                  labelText: 'Owner name (optional)',
-                  errorText: _error,
-                  errorMaxLines: 3,
-                ),
+              NavigationRailDestination(
+                icon: Icon(Icons.monitor_heart_outlined),
+                label: Text('Health'),
               ),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: _busy ? null : _create,
-                child: const Text('Create and invite owner'),
+              NavigationRailDestination(
+                icon: Icon(Icons.history),
+                label: Text('Audit log'),
               ),
-              if (result != null) ...[
-                const SizedBox(height: 24),
-                const Text(
-                  'Send this link to the owner. It works once, for that email, for 7 days:',
-                ),
-                SelectableText(result, key: const Key('owner-link')),
-                TextButton(
-                  onPressed: () =>
-                      Clipboard.setData(ClipboardData(text: result)),
-                  child: const Text('Copy link'),
-                ),
-              ],
+              NavigationRailDestination(
+                icon: Icon(Icons.add_business_outlined),
+                label: Text('Onboard'),
+              ),
             ],
           ),
-        ),
+          const VerticalDivider(width: 1),
+          Expanded(child: pages[_index]),
+        ],
       ),
     );
   }

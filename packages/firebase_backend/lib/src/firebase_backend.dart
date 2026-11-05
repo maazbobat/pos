@@ -50,6 +50,8 @@ Future<Backend> initFirebaseBackend([
     auth: FirebaseAuthGateway(auth),
     functions: FirebaseOnboardingFunctions(functions),
     data: FirestoreTenantData(firestore, auth),
+    billing: FirebaseBillingBackend(firestore, functions),
+    platform: FirebasePlatformBackend(firestore, functions),
   );
 }
 
@@ -450,4 +452,200 @@ class FirestoreTenantData implements TenantData {
       throw BackendException(e.code, e.message ?? 'Couldn\'t save.');
     }
   }
+}
+
+/// Shared helpers for the billing and platform backends.
+mixin _FirestoreReads {
+  FirebaseFirestore get db;
+  FirebaseFunctions get fns;
+
+  static Map<String, Object?> plain(Map<String, dynamic> data) => {
+    for (final e in data.entries)
+      e.key: e.value is Timestamp ? (e.value as Timestamp).toDate() : e.value,
+  };
+
+  Stream<T?> doc<T>(
+    String path,
+    T Function(String id, Map<String, Object?> d) parse,
+  ) => db.doc(path).snapshots().map((s) {
+    final data = s.data();
+    return data == null ? null : parse(s.id, plain(data));
+  });
+
+  Stream<List<T>> list<T>(
+    Query<Map<String, dynamic>> query,
+    T Function(String id, Map<String, Object?> d) parse,
+  ) => query.snapshots().map(
+    (q) => [for (final d in q.docs) parse(d.id, plain(d.data()))],
+  );
+
+  Future<Map<String, Object?>> call(
+    String name,
+    Map<String, Object?> data,
+  ) async {
+    try {
+      final result = await fns.httpsCallable(name).call<Object?>(data);
+      final value = result.data;
+      return value is Map ? Map<String, Object?>.from(value) : const {};
+    } on FirebaseFunctionsException catch (e) {
+      throw BackendException(e.code, e.message ?? 'Something went wrong.');
+    }
+  }
+}
+
+class FirebaseBillingBackend with _FirestoreReads implements BillingBackend {
+  FirebaseBillingBackend(this.db, this.fns);
+  @override
+  final FirebaseFirestore db;
+  @override
+  final FirebaseFunctions fns;
+
+  @override
+  Stream<Subscription?> subscription(String orgId) => doc(
+    'orgs/$orgId/billing/subscription',
+    (_, d) => Subscription.fromMap(d),
+  );
+
+  @override
+  Future<Uri> startCheckout(String orgId, Plan plan) async {
+    final r = await call(Callables.startCheckout, {
+      'orgId': orgId,
+      'plan': plan.name,
+    });
+    return Uri.parse(r['url'] as String);
+  }
+
+  @override
+  Future<Uri> openBillingPortal(String orgId) async {
+    final r = await call(Callables.openBillingPortal, {'orgId': orgId});
+    return Uri.parse(r['url'] as String);
+  }
+
+  @override
+  Stream<List<SupportGrant>> supportGrants(String orgId) =>
+      list(db.collection('orgs/$orgId/supportGrants'), SupportGrant.fromMap);
+
+  @override
+  Future<void> revokeSupportAccess(String orgId, String adminUid) => call(
+    Callables.revokeSupportAccess,
+    {'orgId': orgId, 'adminUid': adminUid},
+  );
+
+  @override
+  Stream<List<AuditEntry>> auditLog(String orgId, {int limit = 50}) => list(
+    db
+        .collection('orgs/$orgId/auditLog')
+        .orderBy('createdAt', descending: true)
+        .limit(limit),
+    AuditEntry.fromMap,
+  );
+}
+
+class FirebasePlatformBackend with _FirestoreReads implements PlatformBackend {
+  FirebasePlatformBackend(this.db, this.fns);
+  @override
+  final FirebaseFirestore db;
+  @override
+  final FirebaseFunctions fns;
+
+  @override
+  Stream<bool> isPlatformAdmin(String uid) =>
+      db.doc('platformAdmins/$uid').snapshots().map((s) => s.exists);
+
+  @override
+  Stream<List<TenantSummary>> tenants() => list(
+    db.collection('platformOrgs').orderBy('name'),
+    TenantSummary.fromMap,
+  );
+
+  @override
+  Stream<TenantSummary?> tenant(String orgId) =>
+      doc('platformOrgs/$orgId', TenantSummary.fromMap);
+
+  @override
+  Stream<List<AuditEntry>> platformAudit({String? orgId, int limit = 50}) {
+    Query<Map<String, dynamic>> q = db.collection('platformAuditLog');
+    if (orgId != null) q = q.where('orgId', isEqualTo: orgId);
+    return list(
+      q.orderBy('createdAt', descending: true).limit(limit),
+      AuditEntry.fromMap,
+    );
+  }
+
+  @override
+  Stream<HealthSummary?> health() =>
+      doc('platformHealth/summary', (_, d) => HealthSummary.fromMap(d));
+
+  @override
+  Stream<List<Incident>> openIncidents() => list(
+    db
+        .collection('platformIncidents')
+        .where('resolved', isEqualTo: false)
+        .orderBy('createdAt', descending: true),
+    Incident.fromMap,
+  );
+
+  @override
+  Stream<SupportGrant?> mySupportGrant(String orgId, String adminUid) =>
+      doc('orgs/$orgId/supportGrants/$adminUid', SupportGrant.fromMap);
+
+  @override
+  Future<DateTime> grantSupportAccess(
+    String orgId, {
+    required String reason,
+    required int hours,
+  }) async {
+    final r = await call(Callables.grantSupportAccess, {
+      'orgId': orgId,
+      'reason': reason,
+      'hours': hours,
+    });
+    return DateTime.fromMillisecondsSinceEpoch(r['expiresAt'] as int);
+  }
+
+  @override
+  Future<void> revokeMySupportAccess(String orgId) =>
+      call(Callables.revokeSupportAccess, {'orgId': orgId});
+
+  @override
+  Future<void> setOrgSuspended(
+    String orgId, {
+    required bool suspended,
+    required String reason,
+  }) => call(Callables.setOrgStatus, {
+    'orgId': orgId,
+    'status': suspended ? 'suspended' : 'active',
+    'reason': reason,
+  });
+
+  @override
+  Future<void> setManualPlan(
+    String orgId, {
+    required Plan plan,
+    required bool active,
+    required String reason,
+  }) => call(Callables.setManualPlan, {
+    'orgId': orgId,
+    'plan': plan.name,
+    'active': active,
+    'reason': reason,
+  });
+
+  @override
+  Future<DateTime> extendTrial(
+    String orgId, {
+    required int days,
+    required String reason,
+  }) async {
+    final r = await call(Callables.extendTrial, {
+      'orgId': orgId,
+      'days': days,
+      'reason': reason,
+    });
+    return DateTime.fromMillisecondsSinceEpoch(r['trialEndsAt'] as int);
+  }
+
+  @override
+  Future<void> resolveIncident(String incidentId, {required String note}) =>
+      call(Callables.resolveIncident, {'incidentId': incidentId, 'note': note});
 }
