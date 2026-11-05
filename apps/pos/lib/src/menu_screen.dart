@@ -29,6 +29,10 @@ class _MenuScreenState extends State<MenuScreen> {
   Cart _cart = const Cart();
   var _lineNo = 0;
 
+  /// The location's tax rates, from the latest snapshot. Applied whenever
+  /// the cart is read, so what is charged always includes tax.
+  List<TaxRate> _taxRates = const [];
+
   DeviceContext get device => widget.device;
 
   void _setCart(Cart cart) => setState(() => _cart = cart);
@@ -53,7 +57,7 @@ class _MenuScreenState extends State<MenuScreen> {
   Future<void> _payCash() async {
     final backend = BackendScope.of(context);
     final messenger = ScaffoldMessenger.of(context);
-    final cart = _cart;
+    final cart = _cart.withTaxRates(_taxRates);
     final tendered = await showDialog<int>(
       context: context,
       builder: (_) => CashDialog(totalCents: cart.totals.totalCents),
@@ -94,7 +98,8 @@ class _MenuScreenState extends State<MenuScreen> {
     return StreamBuilder<List<TaxRate>>(
       stream: backend.orders.taxRates(device.orgId, device.locationId),
       builder: (context, taxSnap) {
-        final cart = _cart.withTaxRates(taxSnap.data ?? const []);
+        _taxRates = taxSnap.data ?? const [];
+        final cart = _cart.withTaxRates(_taxRates);
         return Scaffold(
           appBar: AppBar(
             title: Text(widget.staff.label),

@@ -236,6 +236,13 @@ void main() {
     // 7.50 + 5.75 = 13.25, HST 1.72
     expect(total(tester), r'$14.97');
 
+    // Paying straight away charges the total with tax.
+    await tester.tap(find.byKey(const Key('pay-cash')));
+    await tester.pumpAndSettle();
+    expect(find.text(r'Cash: $14.97'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
     // A cashier gives 10% off with no manager PIN.
     await tester.tap(find.byKey(const Key('discount')));
     await tester.pumpAndSettle();
