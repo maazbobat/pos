@@ -28,7 +28,7 @@ beforeEach(async () => {
   fake = new FakeCardProvider();
   const cash = new CashProvider();
   const clover = new CloverProvider();
-  const terminal = new StripeTerminalProvider();
+  const terminal = new StripeTerminalProvider(null);
   registry = (id) => ({ cash, clover, stripe_terminal: terminal, fake_card: fake, stripe_online: new StripeOnlineProvider() })[id];
 
   await db().doc(`${LOC}/settings/payments`).set({
