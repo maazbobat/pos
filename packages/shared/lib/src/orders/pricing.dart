@@ -154,7 +154,11 @@ int discountCentsFor(List<Discount> discounts, int subtotalCents) {
   var remaining = subtotalCents;
   for (final d in discounts) {
     final off = switch (d.type) {
-      DiscountType.percent => mulDivRound(remaining, d.value.clamp(0, 100), 100),
+      DiscountType.percent => mulDivRound(
+        remaining,
+        d.value.clamp(0, 100),
+        100,
+      ),
       DiscountType.amount => d.value.clamp(0, remaining),
     };
     remaining -= off;

@@ -45,6 +45,16 @@ abstract final class Callables {
   static const refundPayment = 'refundPayment';
   static const voidOrder = 'voidOrder';
 
+  // Online ordering. The last three are public: guests don't sign in.
+  static const updateOnlineOrdering = 'updateOnlineOrdering';
+  static const getStorefront = 'getStorefront';
+  static const placeOnlineOrder = 'placeOnlineOrder';
+  static const getOnlineOrderStatus = 'getOnlineOrderStatus';
+
+  // Delivery marketplaces through an aggregator
+  static const linkDeliveryStore = 'linkDeliveryStore';
+  static const syncDeliveryMenu = 'syncDeliveryMenu';
+
   // Monitoring
   static const resolveIncident = 'resolveIncident';
 }

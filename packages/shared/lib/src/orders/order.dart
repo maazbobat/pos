@@ -252,7 +252,11 @@ class OrderCustomer {
     email: data['email'] as String?,
   );
 
-  Map<String, Object?> toMap() => {'name': name, 'phone': phone, 'email': email};
+  Map<String, Object?> toMap() => {
+    'name': name,
+    'phone': phone,
+    'email': email,
+  };
 }
 
 /// `orgs/{orgId}/locations/{locationId}/orders/{orderId}`. See docs/orders.md.

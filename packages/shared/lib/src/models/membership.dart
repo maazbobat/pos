@@ -63,7 +63,8 @@ class Membership {
     'status': status.name,
     'orgRole': isOwner ? Role.owner.wireName : null,
     'locationRoles': {
-      for (final entry in locationRoles.entries) entry.key: entry.value.wireName,
+      for (final entry in locationRoles.entries)
+        entry.key: entry.value.wireName,
     },
     'roles': [for (final role in roles) role.wireName],
   };

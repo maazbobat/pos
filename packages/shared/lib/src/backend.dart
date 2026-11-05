@@ -5,6 +5,7 @@ import 'models/location.dart';
 import 'models/membership.dart';
 import 'models/organization.dart';
 import 'models/staff.dart';
+import 'orders/orders_backend.dart';
 import 'role.dart';
 
 /// Everything the apps need from Firebase, behind interfaces so screens can
@@ -149,6 +150,9 @@ abstract interface class TenantData {
   Stream<List<Invite>> invites(String orgId, String locationId);
   Stream<List<Device>> devices(String orgId, String locationId);
 
+  /// One device. A paired tablet may read only its own.
+  Stream<Device?> device(String orgId, String locationId, String deviceId);
+
   Stream<List<MenuCategory>> menuCategories(String orgId);
   Stream<List<MenuItem>> menuItems(String orgId);
   Stream<List<ModifierGroup>> modifierGroups(String orgId);
@@ -176,10 +180,12 @@ class Backend {
     required this.data,
     required this.billing,
     required this.platform,
+    required this.orders,
   });
   final AuthGateway auth;
   final OnboardingFunctions functions;
   final TenantData data;
   final BillingBackend billing;
   final PlatformBackend platform;
+  final OrdersBackend orders;
 }

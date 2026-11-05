@@ -11,6 +11,7 @@ export 'src/menu/money.dart';
 export 'src/models/device.dart';
 export 'src/orders/cart.dart';
 export 'src/orders/order.dart';
+export 'src/orders/orders_backend.dart';
 export 'src/orders/pricing.dart';
 export 'src/models/location.dart';
 export 'src/models/membership.dart';

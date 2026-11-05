@@ -7,9 +7,7 @@ import 'package:test/test.dart';
 void main() {
   group('pricing matches the server', () {
     final cases =
-        (jsonDecode(
-                  File('test/fixtures/pricing_cases.json').readAsStringSync(),
-                )
+        (jsonDecode(File('test/fixtures/pricing_cases.json').readAsStringSync())
                 as Map)['cases']
             as List;
     for (final c in cases.cast<Map<String, Object?>>()) {
@@ -33,7 +31,9 @@ void main() {
         expect(totals.discountCents, expected['discountCents']);
         expect(totals.taxCents, expected['taxCents']);
         expect(totals.totalCents, expected['totalCents']);
-        expect([for (final t in totals.taxes) t.cents], expected['taxCents_each']);
+        expect([
+          for (final t in totals.taxes) t.cents,
+        ], expected['taxCents_each']);
       });
     }
   });

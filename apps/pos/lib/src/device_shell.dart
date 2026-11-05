@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:pos_shared/pos_shared.dart';
 
 import 'app.dart';
+import 'kitchen_screen.dart';
 import 'menu_screen.dart';
 import 'pin_pad_screen.dart';
 
@@ -54,21 +55,42 @@ class _DeviceShellState extends State<DeviceShell> {
               locationId: member.locationRoles.keys.single,
               deviceId: widget.deviceId,
             );
-            final staff = _staff;
-            if (staff == null) {
-              return PinPadScreen(
-                device: device,
-                onSignedIn: (s) => setState(() => _staff = s),
-              );
-            }
-            return MenuScreen(
-              device: device,
-              staff: staff,
-              onLock: () => setState(() => _staff = null),
+            return StreamBuilder<Device?>(
+              stream: backend.data.device(
+                orgId,
+                device.locationId,
+                widget.deviceId,
+              ),
+              builder: (context, deviceSnap) {
+                if (deviceSnap.connectionState == ConnectionState.waiting) {
+                  return const _Loading();
+                }
+                // A kitchen display needs no PIN: it only shows tickets and
+                // moves their status, which the device itself may do.
+                if (deviceSnap.data?.type == DeviceType.kds) {
+                  return KitchenScreen(device: device);
+                }
+                return _frontCounter(device);
+              },
             );
           },
         );
       },
+    );
+  }
+
+  Widget _frontCounter(DeviceContext device) {
+    final staff = _staff;
+    if (staff == null) {
+      return PinPadScreen(
+        device: device,
+        onSignedIn: (s) => setState(() => _staff = s),
+      );
+    }
+    return MenuScreen(
+      device: device,
+      staff: staff,
+      onLock: () => setState(() => _staff = null),
     );
   }
 }

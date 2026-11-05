@@ -14,6 +14,7 @@ class FakeBackend {
       data: data,
       billing: billing,
       platform: platform,
+      orders: orders,
     );
   }
 
@@ -23,6 +24,7 @@ class FakeBackend {
   late final FakeData data = FakeData(auth);
   final FakeBilling billing = FakeBilling();
   final FakePlatform platform = FakePlatform();
+  final FakeOrders orders = FakeOrders();
 }
 
 /// A broadcast of "something changed", for the fakes' streams.
@@ -422,6 +424,13 @@ class FakeData implements TenantData {
   Stream<List<Device>> devices(String orgId, String locationId) =>
       _watch(() => devicesByLocation[locationId] ?? const []);
   @override
+  Stream<Device?> device(String orgId, String locationId, String deviceId) =>
+      _watch(
+        () => (devicesByLocation[locationId] ?? const <Device>[])
+            .where((d) => d.id == deviceId)
+            .firstOrNull,
+      );
+  @override
   Stream<List<MenuCategory>> menuCategories(String orgId) =>
       _watch(() => List.of(categories));
   @override
@@ -485,4 +494,207 @@ class FakeData implements TenantData {
     );
     notify();
   }
+}
+
+/// Orders kept in memory. [placed] records what the POS wrote, payments
+/// included, in the shape the rules check.
+class FakeOrders implements OrdersBackend {
+  final _changes = _Changes();
+  final Map<String, Order> orders = {};
+  final List<Map<String, Object?>> placed = [];
+  final List<String> calls = [];
+  List<TaxRate> rates = const [TaxRate(id: 'hst', name: 'HST', rate: 0.13)];
+  OnlineOrderingSettings? online;
+  var _next = 0;
+  DateTime now = DateTime(2026, 11, 5, 12);
+
+  void notify() => _changes.notify();
+
+  @override
+  String newOrderId(String orgId, String locationId) => 'order-${++_next}';
+
+  @override
+  Stream<List<TaxRate>> taxRates(String orgId, String locationId) =>
+      _changes.watch(() => rates);
+
+  @override
+  Future<void> placeCashOrder(PosOrderDraft draft) async {
+    final data = draft.toMap(
+      createdBy: 'device',
+      paymentStatus: PaymentStatus.paid,
+    );
+    placed.add({
+      ...data,
+      'payment': {
+        'id': cashPaymentIdFor(draft.orderId),
+        'amountCents': draft.cart.totals.totalCents,
+        'method': 'cash',
+      },
+    });
+    orders[draft.orderId] = Order.fromMap(draft.orderId, {
+      ...data,
+      'createdAt': now,
+    });
+    notify();
+  }
+
+  @override
+  Stream<List<Order>> kitchenOrders(String orgId, String locationId) =>
+      _changes.watch(
+        () => [
+          for (final o in orders.values)
+            if (o.locationId == locationId && o.status.isActive) o,
+        ],
+      );
+
+  @override
+  Stream<List<Order>> recentOrders(
+    String orgId,
+    String locationId, {
+    int limit = 50,
+  }) => _changes.watch(
+    () => [
+      for (final o in orders.values.toList().reversed)
+        if (o.locationId == locationId) o,
+    ],
+  );
+
+  Order _copy(Order o, {OrderStatus? status, PaymentStatus? paymentStatus}) =>
+      Order(
+        id: o.id,
+        orgId: o.orgId,
+        locationId: o.locationId,
+        source: o.source,
+        ticket: o.ticket,
+        status: status ?? o.status,
+        paymentStatus: paymentStatus ?? o.paymentStatus,
+        fulfillment: o.fulfillment,
+        items: o.items,
+        totals: o.totals,
+        discounts: o.discounts,
+        customer: o.customer,
+        pickupAt: o.pickupAt,
+        createdAt: o.createdAt,
+        channel: o.channel,
+        notes: o.notes,
+      );
+
+  @override
+  Future<void> setOrderStatus(Order order, OrderStatus status) async {
+    calls.add('status:${order.id}:${status.wire}');
+    orders[order.id] = _copy(orders[order.id] ?? order, status: status);
+    notify();
+  }
+
+  @override
+  Future<void> recordCashPayment(Order order, {String? staffUid}) async {
+    calls.add('cash:${order.id}:${order.totals.totalCents}');
+    orders[order.id] = _copy(
+      orders[order.id] ?? order,
+      paymentStatus: PaymentStatus.paid,
+    );
+    notify();
+  }
+
+  @override
+  Stream<OnlineOrderingSettings?> onlineOrdering(
+    String orgId,
+    String locationId,
+  ) => _changes.watch(() => online);
+
+  @override
+  Future<OnlineOrderingSettings> updateOnlineOrdering(
+    String orgId,
+    String locationId, {
+    bool? enabled,
+    bool? paused,
+    String? slug,
+    bool? payAtPickup,
+    bool? payOnline,
+    int? pickupLeadMinutes,
+    String? stripeAccountId,
+  }) async {
+    final o = online ?? const OnlineOrderingSettings();
+    calls.add(
+      'online:${[if (enabled != null) 'enabled=$enabled', if (paused != null) 'paused=$paused', if (slug != null) 'slug=$slug'].join(',')}',
+    );
+    online = OnlineOrderingSettings(
+      enabled: enabled ?? o.enabled,
+      paused: paused ?? o.paused,
+      slug: slug ?? o.slug,
+      payAtPickup: payAtPickup ?? o.payAtPickup,
+      payOnline: payOnline ?? o.payOnline,
+      pickupLeadMinutes: pickupLeadMinutes ?? o.pickupLeadMinutes,
+      stripeAccountId: stripeAccountId ?? o.stripeAccountId,
+    );
+    notify();
+    return online!;
+  }
+}
+
+/// The ordering site's Functions, in memory.
+class FakeStorefrontBackend implements StorefrontBackend {
+  FakeStorefrontBackend(this.store);
+  Storefront store;
+  final List<Map<String, Object?>> placed = [];
+  OrderStatus progress = OrderStatus.newOrder;
+
+  @override
+  Future<Storefront> storefront(String slug) async {
+    if (slug != store.slug) {
+      throw const BackendException(
+        'not-found',
+        "We couldn't find that restaurant.",
+      );
+    }
+    return store;
+  }
+
+  @override
+  Future<PlacedOnlineOrder> placeOrder({
+    required String slug,
+    required String orderToken,
+    required Cart cart,
+    required OnlinePayment payment,
+    required String customerName,
+    String? phone,
+    String? email,
+    String? notes,
+    DateTime? pickupAt,
+  }) async {
+    placed.add({
+      'slug': slug,
+      'orderToken': orderToken,
+      'items': cartRequest(cart),
+      'payment': payment.wire,
+      'customer': {'name': customerName, 'phone': phone, 'email': email},
+    });
+    return PlacedOnlineOrder(
+      orderId: 'web_1',
+      ticket: 'W-417',
+      totalCents: cart.totals.totalCents,
+      status: payment == OnlinePayment.online
+          ? OrderStatus.awaitingPayment
+          : OrderStatus.newOrder,
+      checkoutUrl: payment == OnlinePayment.online
+          ? 'https://checkout.stripe.test/web_1'
+          : null,
+    );
+  }
+
+  @override
+  Future<OnlineOrderProgress> orderStatus({
+    required String slug,
+    required String orderId,
+    required String orderToken,
+  }) async => OnlineOrderProgress(
+    orderId: orderId,
+    ticket: 'W-417',
+    status: progress,
+    paymentStatus: PaymentStatus.unpaid,
+    totalCents: 1639,
+    items: const [
+      (name: 'Taro milk tea', qty: 2, modifiers: ['Large']),
+    ],
+  );
 }
