@@ -8,14 +8,14 @@
  * PIN_PEPPER secret (see lib/ids.ts). Repeated wrong PINs lock the device's
  * PIN pad for a few minutes.
  *
- * resolveStaffPin is also what voids and refunds will use to check a
- * manager's PIN server-side (roadmap step 3).
+ * verifyManagerPin checks a manager's PIN server-side for voids and refunds
+ * (handlers/payments.ts), with the same lockout.
  */
 import { FieldValue, Timestamp, type Transaction } from "firebase-admin/firestore";
 import { fail } from "../lib/errors.js";
 import { db } from "../lib/firebase.js";
 import { pinKey } from "../lib/ids.js";
-import type { Role } from "../lib/roles.js";
+import { isManager, type Role } from "../lib/roles.js";
 import {
   type Caller,
   getMember,
@@ -92,18 +92,22 @@ export async function resolveStaffPin(
   return { uid: staff.uid, displayName: staff.displayName ?? staff.email ?? null, role };
 }
 
-/** Called by a paired device when someone types their PIN. */
-export async function startStaffSession(
-  caller: Caller,
-  data: unknown,
-  pepper: string,
-): Promise<StaffAtLocation> {
-  const deviceId = requireUid(caller);
-  const input = asInput(data);
-  const orgId = docId(input, "orgId");
-  const pin = typeof input.pin === "string" ? input.pin : "";
+type GuardOutcome = { locked: true } | { wrong: true } | { staff: StaffAtLocation; locationId: string };
 
-  const outcome = await db().runTransaction(async (tx) => {
+/**
+ * Checks a PIN typed on a paired device, counting wrong tries against the
+ * device's lockout. `accept` decides whether the person found may do what
+ * was asked; a PIN that belongs to someone without that right counts as wrong.
+ */
+async function checkPinOnDevice(
+  orgId: string,
+  deviceId: string,
+  pin: string,
+  pepper: string,
+  accept: (staff: StaffAtLocation) => boolean,
+  onSuccess?: (tx: Transaction, staff: StaffAtLocation, locationId: string) => void,
+): Promise<{ staff: StaffAtLocation; locationId: string }> {
+  const outcome = await db().runTransaction<GuardOutcome>(async (tx) => {
     const device = await requireActiveMember(tx, orgId, deviceId);
     const locations = Object.keys(device.locationRoles);
     if (device.kind !== "device" || locations.length !== 1) throw fail.denied();
@@ -114,11 +118,11 @@ export async function startStaffSession(
     const guard = await tx.get(guardRef);
     const lockedUntil = guard.get("lockedUntil") as Timestamp | undefined;
     if (lockedUntil && lockedUntil.toMillis() > Date.now()) {
-      return { locked: true as const };
+      return { locked: true };
     }
 
     const staff = await resolveStaffPin(tx, orgId, locationId, pin, pepper);
-    if (!staff) {
+    if (!staff || !accept(staff)) {
       const failures = ((guard.get("failures") as number | undefined) ?? 0) + 1;
       const lock = failures >= MAX_PIN_FAILURES;
       tx.set(guardRef, {
@@ -126,18 +130,47 @@ export async function startStaffSession(
         lockedUntil: lock ? Timestamp.fromMillis(Date.now() + PIN_LOCKOUT_MS) : null,
         updatedAt: FieldValue.serverTimestamp(),
       });
-      return { wrong: true as const };
+      return { wrong: true };
     }
     if (guard.exists) tx.delete(guardRef);
-    tx.update(db().doc(paths.device(orgId, locationId, deviceId)), {
-      currentStaffUid: staff.uid,
-      staffSince: FieldValue.serverTimestamp(),
-    });
-    return { staff };
+    onSuccess?.(tx, staff, locationId);
+    return { staff, locationId };
   });
 
   // Throwing inside the transaction would roll back the failure count.
   if ("locked" in outcome) throw fail.exhausted("Too many wrong PINs. Try again in a few minutes.");
   if ("wrong" in outcome) throw fail.denied("That PIN didn't match anyone at this location.");
-  return outcome.staff;
+  return outcome;
+}
+
+/** Called by a paired device when someone types their PIN. */
+export async function startStaffSession(
+  caller: Caller,
+  data: unknown,
+  pepper: string,
+): Promise<StaffAtLocation> {
+  const deviceId = requireUid(caller);
+  const input = asInput(data);
+  const orgId = docId(input, "orgId");
+  const pin = typeof input.pin === "string" ? input.pin : "";
+  const { staff } = await checkPinOnDevice(orgId, deviceId, pin, pepper, () => true, (tx, staff, locationId) => {
+    tx.update(db().doc(paths.device(orgId, locationId, deviceId)), {
+      currentStaffUid: staff.uid,
+      staffSince: FieldValue.serverTimestamp(),
+    });
+  });
+  return staff;
+}
+
+/**
+ * A manager's PIN typed on a device to approve a void or refund. Wrong PINs,
+ * and PINs of staff who aren't managers here, count toward the lockout.
+ */
+export async function verifyManagerPin(
+  orgId: string,
+  deviceId: string,
+  pin: string,
+  pepper: string,
+): Promise<{ staff: StaffAtLocation; locationId: string }> {
+  return checkPinOnDevice(orgId, deviceId, pin, pepper, (staff) => isManager(staff.role));
 }
