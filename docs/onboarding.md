@@ -10,7 +10,7 @@ entry to `orgs/{orgId}/auditLog`. Tests: `npm run test:functions`.
 
 1. A platform admin calls `createOrganization` (name, type, owner email). This
    creates the org (`status: active`, `accessLevel: full`, `plan: trial`), a
-   trialing subscription placeholder and an owner invite. The admin gets no
+   30-day free trial (docs/commercial.md) and an owner invite. The admin gets no
    membership in the org.
 2. The owner opens the invite link and calls `acceptInvite` (below).
 3. The owner calls `createLocation` (name, province, timezone). The location
@@ -19,7 +19,8 @@ entry to `orgs/{orgId}/auditLog`. Tests: `npm run test:functions`.
    are left for the owner to add. **These rates need accountant review.**
 4. `setLocationStatus` closes or reopens a location (owner only).
 
-Self-serve sign-up can reuse the same code once billing exists (step 3).
+Self-serve sign-up can reuse the same code now that billing exists; it's not
+built yet.
 
 ## 2. Staff
 

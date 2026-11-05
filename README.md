@@ -3,9 +3,11 @@
 Multi-tenant restaurant POS and operations platform: Flutter apps on Firebase
 (Auth, Firestore, Cloud Functions, Storage, Messaging).
 
-**Status:** roadmap step 2, onboarding. Tenant schema and rules (milestone 1),
-onboarding Cloud Functions, menu setup, and first app screens: POS pairing and
-PIN pad, manager staff/devices/menu, admin restaurant creation.
+**Status:** roadmap step 3, commercial operations. Done before it: tenant
+schema and rules, onboarding Functions, menu setup, and the first app screens.
+Step 3 adds Stripe Billing with a grace period then read-only, the
+PaymentProvider abstraction with refunds and voids, audited platform support
+access, and monitoring ([docs/commercial.md](docs/commercial.md)).
 
 ## Layout
 
@@ -19,7 +21,7 @@ PIN pad, manager staff/devices/menu, admin restaurant creation.
 | `functions/` | Cloud Functions (TypeScript, Node 22) |
 | `firestore.rules` | Tenant isolation and role permissions |
 | `tests/rules/` | Emulator tests for the rules, including the permission matrix as data |
-| `docs/` | Schema and permission model |
+| `docs/` | Schema, permissions, onboarding, billing and payments, monitoring |
 
 ## Running checks
 
