@@ -4,11 +4,17 @@ Tenancy is decided by the document path, never by fields a client sends.
 
 ```
 platformAdmins/{uid}                 platform admins (Functions write only)
+platformOrgs/{orgId}                 tenant summary for the admin portal (platform admins read)
+platformAuditLog/{eventId}           every platform admin action (platform admins read)
+platformHealth/summary               monitoring sweep (platform admins read)
+platformIncidents/{id}               problems to look at (platform admins read)
+stripeCustomers/{customerId}         Stripe customer to org link (Functions only)
+stripeEvents/{eventId}               processed Stripe webhook events (Functions only)
 pairingCodes/{code}                  device pairing codes (Functions only)
 users/{uid}                          profile; orgIds[] maintained by Functions
 
 orgs/{orgId}                         name, type, status, accessLevel, plan
-  billing/subscription               Stripe state (webhook Function only)
+  billing/subscription               plan, billing state, derived access (Functions only, docs/commercial.md)
   members/{uid}                      orgRole, locationRoles {locationId: role}, roles[], kind, status
   invites/{inviteId}                 pending staff invites; token stored as a hash (Functions only)
   pinIndex/{hmac}                    staff PIN lookup, HMAC of the PIN (Functions only, unreadable)
@@ -20,13 +26,14 @@ orgs/{orgId}                         name, type, status, accessLevel, plan
   reports/{reportId}                 cross-location rollups (Functions only)
 
   locations/{locationId}             name, status, timezone, province
-    settings/{hours | tax | hardware | kitchenRouting}
+    settings/{hours | tax | hardware | kitchenRouting | payments}
     menuOverrides/{itemId}           available, price
     staff/{uid}                      staff list mirrored from memberships (Functions only)
     devices/{deviceId}               type, status, appVersion, lastSeenAt, printer health
       private/pinGuard               wrong-PIN counter and lockout (Functions only)
     orders/{orderId}
-      payments/{paymentId}           no card data; clients record cash only
+      payments/{paymentId}           cents, no card data; clients record cash only
+      refunds/{refundId}             written by refundPayment (Functions only)
     cashSessions/{sessionId}
       movements/{movementId}
     inventoryItems/ stockMovements/ purchaseOrders/

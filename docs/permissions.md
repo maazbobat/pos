@@ -18,7 +18,10 @@ shapes) are in [`tests/rules/src/named.test.ts`](../tests/rules/src/named.test.t
 - Discounts need no manager PIN.
 - Billing problems never lock members out of reading their own data.
 - Platform admins have no standing access; a time-boxed support grant gives
-  read-only access to one org.
+  read-only access to one org. They read `platformOrgs`, `platformAuditLog`,
+  `platformHealth` and `platformIncidents`, and set plans, trials and org
+  status through audited Functions (docs/commercial.md).
+- Refunds and voids need a manager, or a manager's PIN typed on a device.
 
 ## Summary
 
@@ -38,5 +41,7 @@ Yes = rules allow. Fn = Cloud Function only. R = read only. Own = own records.
 | Cash sessions | Yes | Yes | Yes | Own | | | R | Open ones |
 | Inventory, stock, purchase orders | Yes | Yes | Yes | | R | Yes | R | |
 | Reports | Yes | Yes | Yes | | | Inventory | R | |
+| Refunds (read) | Yes | Yes | Yes | Yes | | | R | Yes |
 | Audit log | R | R (own stores) | | | | | | |
+| Billing: Checkout, portal | Fn | | | | | | | |
 | Memberships, devices, locations | Fn | Fn | Fn | | | | | |
