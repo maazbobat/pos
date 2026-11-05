@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:pos_shared/pos_shared.dart';
 
 import 'app.dart';
+import 'billing_screen.dart';
 import 'location_screen.dart';
 import 'pin_dialog.dart';
 
@@ -23,6 +24,17 @@ class LocationPickerScreen extends StatelessWidget {
           appBar: AppBar(
             title: Text(org.name),
             actions: [
+              if (member != null && member.isOwner)
+                IconButton(
+                  key: const Key('billing'),
+                  tooltip: 'Billing and access',
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => BillingScreen(org: org),
+                    ),
+                  ),
+                  icon: const Icon(Icons.receipt_long_outlined),
+                ),
               if (member != null)
                 IconButton(
                   key: const Key('set-pin'),
@@ -48,16 +60,37 @@ class LocationPickerScreen extends StatelessWidget {
               : null,
           body: member == null
               ? const Center(child: CircularProgressIndicator())
-              : member.isOwner
-              ? StreamBuilder<List<Location>>(
-                  stream: data.allLocations(org.id),
-                  builder: (context, locs) =>
-                      _list(context, member, locs.data ?? const []),
+              : org.accessLevel == AccessLevel.readOnly
+              ? Column(
+                  children: [
+                    MaterialBanner(
+                      key: const Key('read-only-banner'),
+                      content: Text(
+                        member.isOwner
+                            ? 'This account is read-only until the subscription is paid. '
+                                  'Everything stays visible and exportable.'
+                            : 'This account is read-only for now. Ask the owner about billing.',
+                      ),
+                      actions: const [SizedBox.shrink()],
+                    ),
+                    Expanded(child: _body(context, member)),
+                  ],
                 )
-              : _list(context, member, null),
+              : _body(context, member),
         );
       },
     );
+  }
+
+  Widget _body(BuildContext context, Membership member) {
+    final data = BackendScope.of(context).data;
+    return member.isOwner
+        ? StreamBuilder<List<Location>>(
+            stream: data.allLocations(org.id),
+            builder: (context, locs) =>
+                _list(context, member, locs.data ?? const []),
+          )
+        : _list(context, member, null);
   }
 
   Widget _list(BuildContext context, Membership member, List<Location>? all) {

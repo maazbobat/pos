@@ -110,6 +110,21 @@ The admin portal reads `platformOrgs/{orgId}`, a summary per tenant (name,
 plan, status, billing state, location count, owner email) kept up to date by
 Functions, so listing tenants needs no tenant access.
 
+## Admin portal and owner screens
+
+`apps/admin` (Flutter web, platform admins only):
+
+- **Tenants:** every org from `platformOrgs`, with search and filters (needs attention, on trial, suspended).
+- **Tenant page:** plan, billing state and dates. Actions: set a plan by hand, extend the trial, open or end support access, suspend or reactivate. Each needs a reason, and the page lists the platform actions taken on the tenant.
+- **Health:** the latest sweep and open incidents, which can be resolved with a note.
+- **Audit log:** every platform action.
+- **Onboard:** create a restaurant and get the owner's invite link.
+
+`apps/manager`, for owners, from the receipt icon on the location list:
+
+- **Billing and access:** plan, trial, grace or read-only state. Choosing a plan opens Stripe Checkout, and Stripe's portal handles cards, invoices and cancelling. The screen also shows who from the platform has support access, with a button to end it, and the org's audit log.
+- When the org is read-only, everyone sees a banner, and the app hides actions that would write.
+
 ## Monitoring
 
 See [monitoring.md](monitoring.md).

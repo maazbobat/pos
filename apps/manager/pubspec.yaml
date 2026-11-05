@@ -13,6 +13,7 @@ dependencies:
     sdk: flutter
   pos_shared:
   pos_firebase_backend:
+  url_launcher: ^6.3.3
 
 dev_dependencies:
   flutter_test:
