@@ -354,6 +354,7 @@ void main() {
       expect(saved[ConsentController.storageKey], 'granted');
       expect(sink.started, 1);
       expect(sink.granted, isTrue);
+      expect(sink.events, ['page_view']);
       await addLargeTaro(tester);
       expect(sink.events, contains('add_to_cart'));
 
@@ -419,6 +420,21 @@ void main() {
       await pumpSite(tester, backend, size: phone, route: '/nobody');
       await tester.pumpWidget(const SizedBox());
     });
+  });
+
+  test('guests see plain words for connection and server faults', () {
+    const generic =
+        'Something went wrong. Check your connection and try again.';
+    expect(
+      errorMessage(const BackendException('internal', 'internal [0]')),
+      generic,
+    );
+    expect(errorMessage(const BackendException('unavailable', 'x')), generic);
+    expect(errorMessage(Exception('boom')), generic);
+    expect(
+      errorMessage(const BackendException('failed-precondition', 'Sold out.')),
+      'Sold out.',
+    );
   });
 
   test('phone and email checks', () {

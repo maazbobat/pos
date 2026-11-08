@@ -37,10 +37,19 @@ class SiteScope extends InheritedWidget {
       backend != old.backend || analytics != old.analytics;
 }
 
-String errorMessage(Object e) =>
-    e is BackendException || e is MenuValidationError
-    ? e.toString()
-    : 'Something went wrong. Check your connection and try again.';
+/// Words for a guest. Server checks (sold out, closed) come through as
+/// they are; dropped connections and server faults get one plain message.
+String errorMessage(Object e) => switch (e) {
+  MenuValidationError() => e.toString(),
+  BackendException(
+    code: 'internal' || 'unavailable' || 'deadline-exceeded' || 'unknown',
+  ) =>
+    _tryAgain,
+  BackendException() => e.toString(),
+  _ => _tryAgain,
+};
+
+const _tryAgain = 'Something went wrong. Check your connection and try again.';
 
 bool isNotFound(Object e) => e is BackendException && e.code == 'not-found';
 
@@ -381,13 +390,15 @@ class StoreContact extends StatelessWidget {
     String action,
     Uri link,
     Key key,
-  ) => InkWell(
-    key: key,
+  ) => Semantics(
+    container: true,
+    link: true,
+    label: '$action: $text',
+    excludeSemantics: true,
     onTap: () => openExternal(link),
-    child: Semantics(
-      link: true,
-      label: '$action: $text',
-      excludeSemantics: true,
+    child: InkWell(
+      key: key,
+      onTap: () => openExternal(link),
       child: Padding(
         padding: EdgeInsets.symmetric(vertical: dense ? 2 : 6),
         child: Row(

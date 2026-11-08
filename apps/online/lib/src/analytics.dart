@@ -83,6 +83,7 @@ class ConsentGatedAnalytics {
   final ConsentController consent;
   final AnalyticsSink? sink;
   var _started = false;
+  Map<String, Object?>? _lastPage;
 
   /// Whether the site uses optional cookies at all.
   bool get enabled => sink != null;
@@ -95,6 +96,10 @@ class ConsentGatedAnalytics {
     if (_granted && !_started) {
       _started = true;
       s.start();
+      s.setConsent(granted: true);
+      // Count the page the guest was on when they said yes.
+      if (_lastPage case final page?) s.event('page_view', page);
+      return;
     }
     if (_started) s.setConsent(granted: _granted);
   }
@@ -104,8 +109,10 @@ class ConsentGatedAnalytics {
   }
 
   /// A screen view. Paths only, never query strings: order links carry a secret.
-  void pageView(String title, String path) =>
-      event('page_view', {'page_title': title, 'page_path': path});
+  void pageView(String title, String path) {
+    _lastPage = {'page_title': title, 'page_path': path};
+    event('page_view', _lastPage!);
+  }
 
   void dispose() => consent.removeListener(_apply);
 }
