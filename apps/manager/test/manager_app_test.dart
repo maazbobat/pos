@@ -339,11 +339,35 @@ void main() {
     expect(fake.orders.calls, [
       'online:enabled=true,slug=maple-tea-co-cambridge',
     ]);
-    expect(find.textContaining('/#/maple-tea-co-cambridge'), findsWidgets);
+    expect(find.textContaining('/maple-tea-co-cambridge'), findsWidgets);
 
     await tester.tap(find.byKey(const Key('online-paused')));
     await tester.pumpAndSettle();
     expect(fake.orders.calls.last, 'online:paused=true');
+  });
+
+  testWidgets('a manager sets the phone and email guests see', (tester) async {
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final fake = backendFor('mgr', role: Role.storeManager);
+    await openCambridge(tester, fake);
+    await tester.tap(find.text('Online'));
+    await tester.pumpAndSettle();
+    expect(find.text('No street address on file'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const Key('online-phone')),
+      '519-555-0199',
+    );
+    await tester.enterText(
+      find.byKey(const Key('online-email')),
+      'hello@maple.example',
+    );
+    await tester.ensureVisible(find.byKey(const Key('online-save')));
+    await tester.tap(find.byKey(const Key('online-save')));
+    await tester.pumpAndSettle();
+    expect(fake.orders.online?.contactPhone, '519-555-0199');
+    expect(fake.orders.online?.contactEmail, 'hello@maple.example');
   });
 
   testWidgets('only the owner sees the Stripe account field', (tester) async {

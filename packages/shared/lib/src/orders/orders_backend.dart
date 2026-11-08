@@ -69,6 +69,8 @@ class OnlineOrderingSettings {
     this.payOnline = false,
     this.pickupLeadMinutes = 15,
     this.stripeAccountId,
+    this.contactPhone,
+    this.contactEmail,
   });
 
   final bool enabled;
@@ -83,6 +85,10 @@ class OnlineOrderingSettings {
   /// The restaurant's connected Stripe account (acct_…), owner-set.
   final String? stripeAccountId;
 
+  /// Shown to guests on the ordering site and its privacy page.
+  final String? contactPhone;
+  final String? contactEmail;
+
   factory OnlineOrderingSettings.fromMap(Map<String, Object?> data) =>
       OnlineOrderingSettings(
         enabled: data['enabled'] as bool? ?? false,
@@ -92,6 +98,8 @@ class OnlineOrderingSettings {
         payOnline: data['payOnline'] as bool? ?? false,
         pickupLeadMinutes: (data['pickupLeadMinutes'] as num?)?.toInt() ?? 15,
         stripeAccountId: data['stripeAccountId'] as String?,
+        contactPhone: data['contactPhone'] as String?,
+        contactEmail: data['contactEmail'] as String?,
       );
 }
 
@@ -129,7 +137,8 @@ abstract interface class OrdersBackend {
     String locationId,
   );
 
-  /// Calls updateOnlineOrdering. Leave a field null to keep it.
+  /// Calls updateOnlineOrdering. Leave a field null to keep it; an empty
+  /// [contactPhone] or [contactEmail] clears it.
   Future<OnlineOrderingSettings> updateOnlineOrdering(
     String orgId,
     String locationId, {
@@ -140,6 +149,8 @@ abstract interface class OrdersBackend {
     bool? payOnline,
     int? pickupLeadMinutes,
     String? stripeAccountId,
+    String? contactPhone,
+    String? contactEmail,
   });
 }
 
@@ -156,11 +167,26 @@ class Storefront {
     required this.taxRates,
     required this.sections,
     this.closedReason,
+    this.address,
+    this.province,
+    this.phone,
+    this.email,
   });
 
   final String slug;
   final String brandName;
   final String locationName;
+
+  /// The location's street address, phone and email as the restaurant
+  /// entered them. Null when not set: the site never makes one up.
+  final String? address;
+  final String? province;
+  final String? phone;
+  final String? email;
+
+  /// "Brand · Location", or whichever of the two is set.
+  String get displayName =>
+      [brandName, locationName].where((s) => s.trim().isNotEmpty).join(' · ');
   final bool open;
   final String? closedReason;
   final bool payAtPickup;
@@ -184,6 +210,10 @@ class Storefront {
       locationName: data['locationName'] as String? ?? '',
       open: data['open'] as bool? ?? false,
       closedReason: data['closedReason'] as String?,
+      address: data['address'] as String?,
+      province: data['province'] as String?,
+      phone: data['phone'] as String?,
+      email: data['email'] as String?,
       payAtPickup: data['payAtPickup'] as bool? ?? false,
       payOnline: data['payOnline'] as bool? ?? false,
       pickupLeadMinutes: (data['pickupLeadMinutes'] as num?)?.toInt() ?? 15,
@@ -262,8 +292,16 @@ class OnlineOrderProgress {
     required this.items,
     this.pickupAt,
     this.checkoutUrl,
+    this.storeName = '',
+    this.address,
+    this.phone,
   });
   final String orderId;
+
+  /// Who has the order and where to pick it up, for the thank-you page.
+  final String storeName;
+  final String? address;
+  final String? phone;
   final String ticket;
   final OrderStatus status;
   final PaymentStatus paymentStatus;
@@ -284,6 +322,9 @@ class OnlineOrderProgress {
           ? DateTime.fromMillisecondsSinceEpoch(pickup.toInt())
           : null,
       checkoutUrl: data['checkoutUrl'] as String?,
+      storeName: data['storeName'] as String? ?? '',
+      address: data['address'] as String?,
+      phone: data['phone'] as String?,
       items: [
         for (final l in (data['items'] as List?) ?? const [])
           (

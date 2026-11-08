@@ -31,6 +31,7 @@ import type { Caller } from "./lib/tenant.js";
 import { recordIncident } from "./lib/platform.js";
 import { StripeOnlineCheckoutGateway } from "./orders/checkout.js";
 import { defaultRegistry } from "./payments/providers.js";
+import { handleSiteRequest } from "./site/seo.js";
 import { stripeReaderSetupApi, stripeTerminalApi } from "./payments/stripe_terminal.js";
 
 // Montreal, so tenant data and compute stay in Canada.
@@ -203,6 +204,33 @@ export const onlineCheckoutWebhook = onRequest({ secrets: [STRIPE_CONNECT_WEBHOO
   } catch (err) {
     await recordIncident("stripe_webhook_failed", "Online checkout webhook failed", { eventId: event.id, err: String(err) });
     res.status(500).send("Processing failed");
+  }
+});
+
+/**
+ * The ordering site's pages for crawlers and link previews: per-page titles,
+ * descriptions and Open Graph tags, robots.txt, sitemap.xml and real 404s.
+ * Hosting sends every path that isn't a built file here (firebase.json).
+ */
+let shell: { html: string; at: number } | null = null;
+async function siteShell(): Promise<string> {
+  if (shell && Date.now() - shell.at < 5 * 60_000) return shell.html;
+  const res = await fetch(`${ORDERING_SITE_URL.value().replace(/\/+$/, "")}/index.html`);
+  if (!res.ok) throw new Error(`index.html: HTTP ${res.status}`);
+  shell = { html: await res.text(), at: Date.now() };
+  return shell.html;
+}
+export const site = onRequest({ concurrency: 80, memory: "256MiB" }, async (req, res) => {
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    res.status(405).send("GET only");
+    return;
+  }
+  try {
+    const out = await handleSiteRequest(req.path, ORDERING_SITE_URL.value(), siteShell);
+    res.status(out.status).set("Content-Type", out.contentType).set("Cache-Control", out.cacheControl).send(out.body);
+  } catch (err) {
+    logger.error("Ordering site page failed", { path: req.path, err: String(err) });
+    res.status(503).set("Retry-After", "30").send("The ordering site is busy. Please try again in a moment.");
   }
 });
 

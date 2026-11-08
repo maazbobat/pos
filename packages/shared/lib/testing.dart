@@ -615,8 +615,12 @@ class FakeOrders implements OrdersBackend {
     bool? payOnline,
     int? pickupLeadMinutes,
     String? stripeAccountId,
+    String? contactPhone,
+    String? contactEmail,
   }) async {
     final o = online ?? const OnlineOrderingSettings();
+    String? contact(String? next, String? old) =>
+        next == null ? old : (next.trim().isEmpty ? null : next.trim());
     calls.add(
       'online:${[if (enabled != null) 'enabled=$enabled', if (paused != null) 'paused=$paused', if (slug != null) 'slug=$slug'].join(',')}',
     );
@@ -628,6 +632,8 @@ class FakeOrders implements OrdersBackend {
       payOnline: payOnline ?? o.payOnline,
       pickupLeadMinutes: pickupLeadMinutes ?? o.pickupLeadMinutes,
       stripeAccountId: stripeAccountId ?? o.stripeAccountId,
+      contactPhone: contact(contactPhone, o.contactPhone),
+      contactEmail: contact(contactEmail, o.contactEmail),
     );
     notify();
     return online!;
@@ -641,8 +647,21 @@ class FakeStorefrontBackend implements StorefrontBackend {
   final List<Map<String, Object?>> placed = [];
   OrderStatus progress = OrderStatus.newOrder;
 
+  /// Make the next storefront or order-status call fail, like a dropped connection.
+  Object? failNext;
+
+  /// Make placeOrder wait for this before answering, to see the busy state.
+  Completer<void>? holdPlaceOrder;
+
+  Object? _takeFailure() {
+    final f = failNext;
+    failNext = null;
+    return f;
+  }
+
   @override
   Future<Storefront> storefront(String slug) async {
+    if (_takeFailure() case final f?) throw f;
     if (slug != store.slug) {
       throw const BackendException(
         'not-found',
@@ -671,6 +690,7 @@ class FakeStorefrontBackend implements StorefrontBackend {
       'payment': payment.wire,
       'customer': {'name': customerName, 'phone': phone, 'email': email},
     });
+    await holdPlaceOrder?.future;
     return PlacedOnlineOrder(
       orderId: 'web_1',
       ticket: 'W-417',
@@ -689,16 +709,22 @@ class FakeStorefrontBackend implements StorefrontBackend {
     required String slug,
     required String orderId,
     required String orderToken,
-  }) async => OnlineOrderProgress(
-    orderId: orderId,
-    ticket: 'W-417',
-    status: progress,
-    paymentStatus: PaymentStatus.unpaid,
-    totalCents: 1639,
-    items: const [
-      (name: 'Taro milk tea', qty: 2, modifiers: ['Large']),
-    ],
-  );
+  }) async {
+    if (_takeFailure() case final f?) throw f;
+    return OnlineOrderProgress(
+      orderId: orderId,
+      storeName: store.displayName,
+      address: store.address,
+      phone: store.phone,
+      ticket: 'W-417',
+      status: progress,
+      paymentStatus: PaymentStatus.unpaid,
+      totalCents: 1639,
+      items: const [
+        (name: 'Taro milk tea', qty: 2, modifiers: ['Large']),
+      ],
+    );
+  }
 }
 
 /// Card payments, refunds and hardware settings, in memory. Card charges

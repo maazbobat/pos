@@ -1,14 +1,20 @@
 {
     "name": "Order online",
-    "short_name": "Order online",
-    "start_url": ".",
+    "short_name": "Order",
+    "start_url": "/",
+    "scope": "/",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
-    "orientation": "portrait-primary",
+    "background_color": "#FFFBFF",
+    "theme_color": "#D84315",
+    "description": "Order ahead for pickup from local restaurants.",
+    "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
+        {
+            "src": "favicon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml"
+        },
         {
             "src": "icons/Icon-192.png",
             "sizes": "192x192",

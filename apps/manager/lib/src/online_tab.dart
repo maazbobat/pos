@@ -55,6 +55,12 @@ class _OnlineFormState extends State<_OnlineForm> {
   late final _stripe = TextEditingController(
     text: widget.settings.stripeAccountId ?? '',
   );
+  late final _phone = TextEditingController(
+    text: widget.settings.contactPhone ?? '',
+  );
+  late final _email = TextEditingController(
+    text: widget.settings.contactEmail ?? '',
+  );
   var _busy = false;
 
   String _suggestSlug() =>
@@ -68,6 +74,8 @@ class _OnlineFormState extends State<_OnlineForm> {
     _slug.dispose();
     _lead.dispose();
     _stripe.dispose();
+    _phone.dispose();
+    _email.dispose();
     super.dispose();
   }
 
@@ -89,6 +97,8 @@ class _OnlineFormState extends State<_OnlineForm> {
     }
     final slug = _slug.text.trim().toLowerCase();
     final stripe = _stripe.text.trim();
+    final phone = _phone.text.trim();
+    final email = _email.text.trim();
     setState(() => _busy = true);
     try {
       await BackendScope.of(context).orders.updateOnlineOrdering(
@@ -106,6 +116,9 @@ class _OnlineFormState extends State<_OnlineForm> {
                 stripe != (s.stripeAccountId ?? '')
             ? stripe
             : null,
+        // An empty field clears it.
+        contactPhone: fields && phone != (s.contactPhone ?? '') ? phone : null,
+        contactEmail: fields && email != (s.contactEmail ?? '') ? email : null,
       );
       messenger.showSnackBar(const SnackBar(content: Text('Saved.')));
     } catch (e) {
@@ -121,7 +134,8 @@ class _OnlineFormState extends State<_OnlineForm> {
     final s = widget.settings;
     final store = widget.store;
     final canEdit = store.isManager && store.canWrite && !_busy;
-    final link = s.slug == null ? null : '${OnlineTab.siteUrl}/#/${s.slug}';
+    final link = s.slug == null ? null : '${OnlineTab.siteUrl}/${s.slug}';
+    final address = store.location.address;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -156,7 +170,7 @@ class _OnlineFormState extends State<_OnlineForm> {
           enabled: canEdit,
           decoration: InputDecoration(
             labelText: 'Web address',
-            prefixText: '${OnlineTab.siteUrl}/#/',
+            prefixText: '${OnlineTab.siteUrl}/',
             helperText: 'Lowercase letters, numbers and hyphens.',
           ),
         ),
@@ -167,6 +181,43 @@ class _OnlineFormState extends State<_OnlineForm> {
           keyboardType: TextInputType.number,
           decoration: const InputDecoration(
             labelText: 'Earliest pickup, in minutes after ordering',
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text('Shown to guests', style: theme.textTheme.titleSmall),
+        ListTile(
+          key: const Key('online-address'),
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.place_outlined),
+          title: Text(address ?? 'No street address on file'),
+          subtitle: Text(
+            address == null
+                ? 'Guests won\'t see where to pick up. Ask support to add '
+                      'this location\'s address.'
+                : 'This location\'s address, on the ordering page, its '
+                      'privacy policy and search results.',
+          ),
+        ),
+        TextField(
+          key: const Key('online-phone'),
+          controller: _phone,
+          enabled: canEdit,
+          keyboardType: TextInputType.phone,
+          decoration: const InputDecoration(
+            labelText: 'Store phone (optional)',
+            hintText: '519-555-0100',
+            helperText: 'Guests can call about their order.',
+          ),
+        ),
+        TextField(
+          key: const Key('online-email'),
+          controller: _email,
+          enabled: canEdit,
+          keyboardType: TextInputType.emailAddress,
+          decoration: const InputDecoration(
+            labelText: 'Store email (optional)',
+            hintText: 'hello@example.com',
+            helperText: 'For privacy questions from guests.',
           ),
         ),
         SwitchListTile(
