@@ -92,8 +92,29 @@ Future<void> pumpSite(
   await tester.pumpAndSettle();
 }
 
+/// The store page's main scroller (the category tabs scroll too).
+Finder get storeScroll => find
+    .descendant(
+      of: find.byKey(const Key('store-scroll')),
+      matching: find.byType(Scrollable),
+    )
+    .first;
+
+/// Scrolls [finder] to the middle of the store page, clear of the pinned bar.
+Future<void> reveal(WidgetTester tester, Finder finder) async {
+  await tester.scrollUntilVisible(finder, 200, scrollable: storeScroll);
+  await Scrollable.ensureVisible(tester.element(finder), alignment: 0.5);
+  await tester.pumpAndSettle();
+}
+
 Future<void> addLargeTaro(WidgetTester tester) async {
-  await tester.tap(find.byKey(const Key('menu-taro')));
+  final item = find.byKey(const Key('menu-taro'));
+  if (find.byKey(const Key('store-scroll')).evaluate().isNotEmpty) {
+    await tester.scrollUntilVisible(item, 200, scrollable: storeScroll);
+    await Scrollable.ensureVisible(tester.element(item), alignment: 0.5);
+    await tester.pumpAndSettle();
+  }
+  await tester.tap(item);
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('pick-size-l')));
   await tester.pumpAndSettle();
@@ -148,7 +169,8 @@ void main() {
 
     expect(find.text('Order received'), findsOneWidget);
     expect(find.byKey(const Key('thank-you')), findsOneWidget);
-    expect(find.text('Your number is W-417.'), findsOneWidget);
+    expect(find.byKey(const Key('ticket')), findsOneWidget);
+    expect(find.text('W-417'), findsOneWidget);
     expect(find.text('2 × Taro milk tea (Large)'), findsOneWidget);
     expect(find.text('12 Main St, Cambridge, ON N1R 1A1'), findsOneWidget);
 
@@ -317,10 +339,63 @@ void main() {
 
   testWidgets('the footer links to the legal pages', (tester) async {
     await pumpSite(tester, FakeStorefrontBackend(store()));
-    await tester.scrollUntilVisible(find.byKey(const Key('footer-terms')), 200);
+    await reveal(tester, find.byKey(const Key('footer-terms')));
     await tester.tap(find.byKey(const Key('footer-terms')));
     await tester.pumpAndSettle();
     expect(find.text('Terms of use for Maple Tea · Cambridge'), findsOneWidget);
+  });
+
+  testWidgets('searching the menu narrows it, and says when nothing matches', (
+    tester,
+  ) async {
+    await pumpSite(tester, FakeStorefrontBackend(store()));
+    await tester.enterText(find.byKey(const Key('menu-search')), 'mango');
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('menu-mango')), findsOneWidget);
+    expect(find.byKey(const Key('menu-taro')), findsNothing);
+    await tester.enterText(find.byKey(const Key('menu-search')), 'pizza');
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('menu-empty')), findsOneWidget);
+    await tester.tap(find.byTooltip('Clear search'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('menu-taro')), findsOneWidget);
+  });
+
+  testWidgets('category tabs jump to their section', (tester) async {
+    await pumpSite(tester, FakeStorefrontBackend(store()));
+    await tester.tap(find.byKey(const Key('category-tea')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('menu-taro')).hitTestable(), findsOneWidget);
+  });
+
+  testWidgets('the thank-you page tracks the order', (tester) async {
+    final backend = FakeStorefrontBackend(store())
+      ..progress = OrderStatus.inProgress;
+    await pumpSite(
+      tester,
+      backend,
+      route: '/maple-cambridge/order/web_1?t=tok',
+    );
+    expect(
+      tester.getSemantics(find.byKey(const Key('order-tracker'))).label,
+      'Step 2 of 4: Being made',
+    );
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('on a desktop the cart sits beside the menu', (tester) async {
+    await pumpSite(
+      tester,
+      FakeStorefrontBackend(store()),
+      size: const Size(1400, 900),
+    );
+    expect(find.byKey(const Key('side-cart')), findsOneWidget);
+    expect(find.textContaining('Your order is empty'), findsOneWidget);
+    await addLargeTaro(tester);
+    expect(find.byKey(const Key('view-order')), findsNothing);
+    await tester.tap(find.byKey(const Key('side-checkout')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('place-order')), findsOneWidget);
   });
 
   group('cookies and analytics', () {
@@ -359,17 +434,13 @@ void main() {
       expect(sink.events, contains('add_to_cart'));
 
       // Cookie settings brings the choice back, and declining stops events.
-      await tester.scrollUntilVisible(
-        find.byKey(const Key('footer-cookies')),
-        200,
-      );
+      await reveal(tester, find.byKey(const Key('footer-cookies')));
       await tester.tap(find.byKey(const Key('footer-cookies')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('cookies-decline')));
       await tester.pumpAndSettle();
       expect(sink.granted, isFalse);
       sink.events.clear();
-      await tester.scrollUntilVisible(find.byKey(const Key('menu-taro')), -200);
       await addLargeTaro(tester);
       expect(sink.events, isEmpty);
     });
