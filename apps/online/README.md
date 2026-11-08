@@ -1,8 +1,9 @@
 # Online ordering site
 
 Each restaurant's own ordering site for pickup orders (Flutter web). A store
-lives at `/#/<web address>`, for example `/#/maple-cambridge`; the manager
-app sets the address under Online ordering.
+lives at `/<web address>`, for example `/maple-cambridge`; the manager app
+sets the address under Online ordering. Old `/#/...` links still work.
+Launch checklist, SEO, legal pages and analytics: docs/online-site.md.
 
 Guests don't sign in. The site reads the menu and places orders through the
 public `getStorefront`, `placeOnlineOrder` and `getOnlineOrderStatus`

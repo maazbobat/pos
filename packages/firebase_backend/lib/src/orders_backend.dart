@@ -183,6 +183,8 @@ class FirestoreOrdersBackend implements OrdersBackend {
     bool? payOnline,
     int? pickupLeadMinutes,
     String? stripeAccountId,
+    String? contactPhone,
+    String? contactEmail,
   }) async {
     final r = await _call(_fns, Callables.updateOnlineOrdering, {
       'orgId': orgId,
@@ -194,6 +196,8 @@ class FirestoreOrdersBackend implements OrdersBackend {
       'payOnline': ?payOnline,
       'pickupLeadMinutes': ?pickupLeadMinutes,
       'stripeAccountId': ?stripeAccountId,
+      'contactPhone': ?contactPhone,
+      'contactEmail': ?contactEmail,
     });
     return OnlineOrderingSettings.fromMap(r);
   }

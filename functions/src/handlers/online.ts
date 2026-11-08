@@ -51,6 +51,9 @@ export interface OnlineSettings {
   payOnline: boolean;
   pickupLeadMinutes: number;
   stripeAccountId: string | null;
+  /** Shown on the ordering site, its receipts and its privacy page. */
+  contactPhone: string | null;
+  contactEmail: string | null;
 }
 
 const DEFAULTS: OnlineSettings = {
@@ -61,15 +64,36 @@ const DEFAULTS: OnlineSettings = {
   payOnline: false,
   pickupLeadMinutes: 15,
   stripeAccountId: null,
+  contactPhone: null,
+  contactEmail: null,
 };
 
 function settingsFrom(data: Record<string, unknown> | undefined): OnlineSettings {
   return { ...DEFAULTS, ...(data ?? {}) } as OnlineSettings;
 }
 
+/**
+ * Paths the ordering site uses for itself, so no store can claim them.
+ * Keep in step with apps/online (its routes) and functions/src/site/seo.ts.
+ */
+export const RESERVED_SLUGS: ReadonlySet<string> = new Set([
+  "privacy", "terms", "cookies", "order", "orders", "sitemap", "robots", "api", "admin",
+  "assets", "icons", "canvaskit", "favicon", "manifest", "index", "help", "support", "www",
+]);
+
 /** Lowercase letters, digits and single hyphens, 3 to 40 long: `maple-tea-cambridge`. */
 export function validSlug(value: string): boolean {
-  return /^[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){2,39}$/.test(value);
+  return /^[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){2,39}$/.test(value) && !RESERVED_SLUGS.has(value);
+}
+
+/** A phone number a guest can dial: 10 to 15 digits, with spaces, dashes, dots, brackets or a leading +. */
+export function validPhone(value: string): boolean {
+  const digits = value.replace(/\D/g, "");
+  return /^\+?[0-9 ().-]{10,25}$/.test(value) && digits.length >= 10 && digits.length <= 15;
+}
+
+export function validEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value);
 }
 
 function bool(input: Input, key: string): boolean | undefined {
@@ -119,6 +143,16 @@ export async function updateOnlineOrdering(caller: Caller, data: unknown): Promi
     const v = optStr(input, "stripeAccountId", { max: 64 });
     if (v !== null && !/^acct_[A-Za-z0-9]+$/.test(v)) throw fail.invalid("A Stripe account ID starts with acct_.");
     changes.stripeAccountId = v;
+  }
+  if (input.contactPhone !== undefined) {
+    const v = optStr(input, "contactPhone", { max: 25 });
+    if (v !== null && !validPhone(v)) throw fail.invalid("Enter the store's phone number, like 519-555-0100.");
+    changes.contactPhone = v;
+  }
+  if (input.contactEmail !== undefined) {
+    const v = optStr(input, "contactEmail", { max: 120 })?.toLowerCase() ?? null;
+    if (v !== null && !validEmail(v)) throw fail.invalid("Enter an email address, like hello@example.com.");
+    changes.contactEmail = v;
   }
   if (Object.keys(changes).length === 0) throw fail.invalid("Nothing to change.");
 
@@ -179,12 +213,17 @@ interface Store {
   locationName: string;
   brandName: string;
   timezone: string;
+  /** The location's street address as entered for it, or null. Never made up. */
+  address: string | null;
+  province: string | null;
+  /** Online ordering is on and the org and location are active: worth showing to search engines. */
+  listed: boolean;
   /** Why the store isn't taking orders, or null when it is. */
   closedReason: string | null;
   taxRates: TaxRate[];
 }
 
-async function loadStore(slug: string): Promise<Store> {
+export async function loadStore(slug: string): Promise<Store> {
   if (!validSlug(slug)) throw fail.notFound("We couldn't find that restaurant.");
   const link = await db().doc(onlinePaths.storefront(slug)).get();
   if (!link.exists) throw fail.notFound("We couldn't find that restaurant.");
@@ -200,7 +239,8 @@ async function loadStore(slug: string): Promise<Store> {
   const settings = settingsFrom(settingsSnap.data());
   if (!org.exists || !loc.exists || settings.slug !== slug) throw fail.notFound("We couldn't find that restaurant.");
   let closedReason: string | null = null;
-  if (!settings.enabled || org.get("status") !== "active" || loc.get("status") !== "active") {
+  const listed = settings.enabled && org.get("status") === "active" && loc.get("status") === "active";
+  if (!listed) {
     closedReason = "This restaurant isn't taking online orders.";
   } else if (org.get("accessLevel") !== "full") {
     closedReason = "This restaurant isn't taking online orders right now.";
@@ -214,6 +254,9 @@ async function loadStore(slug: string): Promise<Store> {
     locationName: (loc.get("name") as string | undefined) ?? "",
     brandName: (brand.get("displayName") as string | undefined) ?? (org.get("name") as string | undefined) ?? "",
     timezone: (loc.get("timezone") as string | undefined) ?? "America/Toronto",
+    address: ((loc.get("address") as string | null | undefined) ?? "").trim() || null,
+    province: (loc.get("province") as string | undefined) ?? null,
+    listed,
     closedReason,
     taxRates: taxRatesFrom(tax.data()),
   };
@@ -224,6 +267,11 @@ export interface Storefront {
   brandName: string;
   locationName: string;
   timezone: string;
+  /** Where to pick up, and how to reach the store: the tenant's own data. */
+  address: string | null;
+  province: string | null;
+  phone: string | null;
+  email: string | null;
   open: boolean;
   closedReason: string | null;
   payAtPickup: boolean;
@@ -244,6 +292,10 @@ export async function getStorefront(data: unknown): Promise<Storefront> {
     brandName: store.brandName,
     locationName: store.locationName,
     timezone: store.timezone,
+    address: store.address,
+    province: store.province,
+    phone: store.settings.contactPhone,
+    email: store.settings.contactEmail,
     open: store.closedReason === null,
     closedReason: store.closedReason,
     payAtPickup: store.settings.payAtPickup,
@@ -383,7 +435,7 @@ export async function placeOnlineOrder(
     return { orderId, ticket, totalCents: totals.totalCents, status: "new", checkoutUrl: null };
   }
 
-  const back = `${opts.siteUrl}/#/${slug}/order/${orderId}?t=${encodeURIComponent(token)}`;
+  const back = `${opts.siteUrl}/${slug}/order/${orderId}?t=${encodeURIComponent(token)}`;
   try {
     const session = await gateway!.createCheckout({
       orgId: store.orgId,
@@ -412,6 +464,10 @@ export async function placeOnlineOrder(
 
 export interface OnlineOrderStatus {
   orderId: string;
+  /** For the thank-you page: who has the order and where to pick it up. */
+  storeName: string;
+  address: string | null;
+  phone: string | null;
   ticket: string;
   status: string;
   paymentStatus: string;
@@ -434,8 +490,12 @@ export async function getOnlineOrderStatus(data: unknown): Promise<OnlineOrderSt
   // Same answer for a wrong token and a missing order, so IDs can't be probed.
   if (!snap.exists || snap.get("statusTokenHash") !== sha256(token)) throw notFound();
   const order = snap.data()!;
+  const store = await loadStore(slug).catch(() => null);
   return {
     orderId,
+    storeName: store ? [store.brandName, store.locationName].filter(Boolean).join(" · ") : "",
+    address: store?.address ?? null,
+    phone: store?.settings.contactPhone ?? null,
     ticket: order.ticket,
     status: order.status,
     paymentStatus: order.paymentStatus,

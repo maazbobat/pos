@@ -115,9 +115,23 @@ describe("online ordering settings", () => {
     await expectHttpsError(turnOn(), "failed-precondition");
   });
 
-  it("checks web addresses", () => {
+  it("checks web addresses, keeping the site's own paths free", () => {
     expect(validSlug("maple-tea-cambridge")).toBe(true);
-    for (const bad of ["ab", "-maple", "maple-", "maple--tea", "Maple", "a".repeat(41)]) expect(validSlug(bad)).toBe(false);
+    for (const bad of ["ab", "-maple", "maple-", "maple--tea", "Maple", "a".repeat(41), "privacy", "terms", "sitemap"]) {
+      expect(validSlug(bad)).toBe(false);
+    }
+  });
+
+  it("keeps the store's public phone and email, and checks them", async () => {
+    await turnOn();
+    const s = await updateOnlineOrdering(caller(u.managerCam), {
+      ...ids, contactPhone: "(519) 555-0199", contactEmail: "Hello@MapleTea.example",
+    });
+    expect(s).toMatchObject({ contactPhone: "(519) 555-0199", contactEmail: "hello@mapletea.example" });
+    await expectHttpsError(updateOnlineOrdering(caller(u.managerCam), { ...ids, contactPhone: "555" }), "invalid-argument");
+    await expectHttpsError(updateOnlineOrdering(caller(u.managerCam), { ...ids, contactEmail: "nope" }), "invalid-argument");
+    await expectHttpsError(updateOnlineOrdering(caller(u.cashierCam), { ...ids, contactPhone: "519-555-0199" }), "permission-denied");
+    expect(await updateOnlineOrdering(caller(u.managerCam), { ...ids, contactPhone: null })).toMatchObject({ contactPhone: null });
   });
 });
 
@@ -131,6 +145,16 @@ describe("storefront", () => {
     const [taro, mango] = store.sections[0].items;
     expect(taro).toMatchObject({ name: "Taro milk tea", priceCents: 625, available: true, kitchenStation: null });
     expect(mango).toMatchObject({ name: "Mango slush", available: false });
+    // No address on file means none is shown: the site never makes one up.
+    expect(store).toMatchObject({ address: null, phone: null, email: null });
+  });
+
+  it("shows the location's address and the store's contact details", async () => {
+    await db().doc(LOC).update({ address: "  12 Main St, Cambridge, ON N1R 1A1 " });
+    await turnOn({ contactPhone: "519-555-0199", contactEmail: "hi@maple.example" });
+    expect(await getStorefront({ slug: "maple-cambridge" })).toMatchObject({
+      address: "12 Main St, Cambridge, ON N1R 1A1", province: "ON", phone: "519-555-0199", email: "hi@maple.example",
+    });
   });
 
   it("says when the store is paused or the org lapsed, and hides unknown stores", async () => {
@@ -223,7 +247,7 @@ describe("paying online with Stripe Checkout", () => {
     expect(checkout.calls[0]).toMatchObject({
       stripeAccountId: "acct_maple", totalCents: 1639, customerEmail: "sam@example.com", idempotencyKey: placed.orderId,
     });
-    expect(checkout.calls[0].successUrl).toContain("https://order.example.test/#/maple-cambridge/order/");
+    expect(checkout.calls[0].successUrl).toContain("https://order.example.test/maple-cambridge/order/");
 
     expect(await handleOnlineCheckoutEvent(completed(placed.orderId))).toBe("paid");
     expect(await handleOnlineCheckoutEvent(completed(placed.orderId))).toBe("duplicate");
@@ -265,7 +289,9 @@ describe("order progress for the guest", () => {
     const placed = await placeOnlineOrder(cart(), checkout, opts);
     await db().doc(`${LOC}/orders/${placed.orderId}`).update({ status: "ready" });
     const status = await getOnlineOrderStatus({ slug: "maple-cambridge", orderId: placed.orderId, orderToken: TOKEN });
-    expect(status).toMatchObject({ status: "ready", ticket: placed.ticket, totalCents: 1639 });
+    expect(status).toMatchObject({
+      status: "ready", ticket: placed.ticket, totalCents: 1639, storeName: "Maple Tea · cambridge", address: null,
+    });
     expect(status.items).toEqual([{ name: "Taro milk tea", qty: 2, modifiers: ["Large"] }]);
     expect(JSON.stringify(status)).not.toContain("519-555-0100");
     await expectHttpsError(

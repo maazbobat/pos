@@ -52,7 +52,7 @@ FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:909
 (cd apps/admin && flutter run -d chrome)     # sign in as admin@demo.test / demo-admin
 (cd apps/manager && flutter run -d chrome)   # the owner accepts the invite link here
 (cd apps/pos && flutter run -d chrome)       # or a tablet; add --dart-define=EMULATOR_HOST=10.0.2.2 on an Android emulator
-(cd apps/online && flutter run -d chrome --web-port 8083)   # the ordering site, at /#/<web address>
+(cd apps/online && flutter run -d chrome --web-port 8083)   # the ordering site, at /<web address>
 ```
 
 Flow: create a restaurant in admin, accept the owner link in manager, add a

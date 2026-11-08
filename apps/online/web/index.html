@@ -1,46 +1,84 @@
 <!DOCTYPE html>
-<html>
+<html lang="en-CA">
 <head>
   <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
+    Flutter replaces $FLUTTER_BASE_HREF with the --base-href build argument
+    ("/" by default). The site uses clean paths (/maple-cambridge), so it must
+    be served from the root of its domain.
   -->
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="Order ahead for pickup.">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#D84315">
 
-  <!-- iOS meta tags & icons -->
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="Order online">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <!--
+    Page title, description, canonical link and Open Graph tags. The `site`
+    Function (functions/src/site/seo.ts) replaces everything between these
+    markers with each page's own tags before crawlers and link previews see
+    it; the app updates them as guests move between pages. Keep the markers.
+  -->
+  <!--seo:start-->
+  <title>Order online for pickup</title>
+  <meta name="description" content="Order ahead from your favourite local restaurant and skip the line. Pay online or at pickup.">
+  <meta name="robots" content="index, follow">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Order online">
+  <meta property="og:title" content="Order online for pickup">
+  <meta property="og:description" content="Order ahead from your favourite local restaurant and skip the line. Pay online or at pickup.">
+  <meta property="og:image" content="og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Order ahead for pickup">
+  <meta property="og:locale" content="en_CA">
+  <meta name="twitter:card" content="summary_large_image">
+  <!--seo:end-->
 
-  <!-- Favicon -->
-  <link rel="icon" type="image/png" href="favicon.png"/>
-
-  <title>Order online</title>
+  <!-- Icons -->
+  <link rel="icon" href="favicon.ico" sizes="48x48">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="manifest" href="manifest.json">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Order online">
+
+  <script>
+    // Old links used /#/<store>. Move them to the clean path before the app starts.
+    if (location.hash.indexOf('#/') === 0) {
+      history.replaceState(null, '', location.hash.slice(1) || '/');
+    }
+  </script>
+  <script src="analytics.js"></script>
+  <style>
+    html, body { margin: 0; height: 100%; background: #fffbff; }
+    #loading {
+      position: fixed; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 16px;
+      font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #5d4037;
+    }
+    #loading .spinner {
+      width: 40px; height: 40px; border-radius: 50%;
+      border: 4px solid #ffccbc; border-top-color: #d84315;
+      animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { #loading .spinner { animation: none; } }
+  </style>
 </head>
 <body>
-  <!--
-    You can customize the "flutter_bootstrap.js" script.
-    This is useful to provide a custom configuration to the Flutter loader
-    or to give the user feedback during the initialization process.
-
-    For more details:
-    * https://docs.flutter.dev/platform-integration/web/initialization
-  -->
+  <!-- Shown until the app draws its first frame (hideLoadingSplash). -->
+  <div id="loading" role="status" aria-live="polite">
+    <div class="spinner" aria-hidden="true"></div>
+    <span>Loading…</span>
+  </div>
+  <noscript>
+    <p style="padding:24px;font-family:system-ui,sans-serif">
+      This ordering page needs JavaScript. Turn it on in your browser, or call
+      the restaurant to order.
+    </p>
+  </noscript>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

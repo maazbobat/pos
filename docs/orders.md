@@ -55,13 +55,14 @@ they can't check item prices, which is why online orders are priced on the serve
 
 ## Online ordering site (`apps/online`)
 
-Each store has a web address (`/#/maple-cambridge`) set in the manager app's
-Online tab. Guests don't sign in; the site only calls public Functions:
+Each store has a web address (`/maple-cambridge`) set in the manager app's
+Online tab. Launch polish (search and link previews, legal pages, cookies,
+analytics) is in [online-site.md](online-site.md). Guests don't sign in; the site only calls public Functions:
 
 | Function | Who | What |
 | --- | --- | --- |
-| `updateOnlineOrdering` | managers; any front-of-house role for pause only; owner for the Stripe account | Web address (unique, held in `storefronts/{slug}`), on/off, pause, pay at pickup, pay online, pickup lead time. Audited |
-| `getStorefront` | public | Store name, open or paused, menu with this store's prices and sold-out flags, tax rates. No kitchen routing or internal fields |
+| `updateOnlineOrdering` | managers; any front-of-house role for pause only; owner for the Stripe account | Web address (unique, held in `storefronts/{slug}`), on/off, pause, pay at pickup, pay online, pickup lead time, the phone and email guests see. Audited |
+| `getStorefront` | public | Store name, the location's address, its public phone and email, open or paused, menu with this store's prices and sold-out flags, tax rates. No kitchen routing or internal fields |
 | `placeOnlineOrder` | public | Prices the cart from Firestore (the request carries item IDs and picks only), checks sold-out, option limits, lead time and the 48-hour scheduling window, then creates the order |
 | `getOnlineOrderStatus` | public, with the order's token | Progress, ticket, items and total. A wrong token and a missing order get the same answer |
 | `onlineCheckoutWebhook` | Stripe | Verified Checkout events from restaurants' accounts |
