@@ -9,6 +9,8 @@ import 'analytics.dart';
 import 'legal.dart';
 import 'platform/browser.dart' show hideLoadingSplash;
 import 'site_chrome.dart';
+import 'store_screen.dart';
+import 'theme.dart';
 
 export 'site_chrome.dart' show SiteScope, UrlOpener, errorMessage;
 
@@ -108,10 +110,7 @@ class _OnlineAppState extends State<OnlineApp> {
         navigatorKey: _navigator,
         navigatorObservers: [_routes],
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          colorSchemeSeed: Colors.deepOrange,
-          useMaterial3: true,
-        ),
+        theme: siteTheme(),
         initialRoute: widget.initialRoute,
         onGenerateRoute: OnlineApp.route,
         onGenerateInitialRoutes: (name) => [
@@ -171,421 +170,6 @@ class LandingScreen extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SiteFooter(),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The store's menu and the guest's cart.
-class StoreScreen extends StatefulWidget {
-  const StoreScreen({super.key, required this.slug});
-  final String slug;
-
-  @override
-  State<StoreScreen> createState() => _StoreScreenState();
-}
-
-class _StoreScreenState extends State<StoreScreen> {
-  Future<Storefront>? _store;
-  Cart _cart = const Cart(fulfillment: Fulfillment.pickup);
-  var _lineNo = 0;
-  final _menuKey = GlobalKey();
-  var _viewed = false;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _store ??= _load();
-  }
-
-  Future<Storefront> _load() async {
-    final store = await SiteScope.of(context).backend.storefront(widget.slug);
-    if (mounted && !_viewed) {
-      _viewed = true;
-      SiteScope.of(context).analytics
-          .event('view_store', {'store': store.slug});
-    }
-    return store;
-  }
-
-  void _retry() {
-    final next = _load();
-    setState(() {
-      _store = next;
-    });
-  }
-
-  Future<void> _add(Storefront store, LocationMenuItem entry) async {
-    final lineId = 'l${++_lineNo}';
-    final line = await showModalBottomSheet<OrderLine>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => _ItemSheet(entry: entry, lineId: lineId),
-    );
-    if (line != null && mounted) {
-      setState(() => _cart = _cart.add(line).withTaxRates(store.taxRates));
-      SiteScope.of(context).analytics.event('add_to_cart', {
-        'item_id': entry.item.id,
-        'quantity': line.qty,
-        'value': line.lineTotalCents / 100,
-        'currency': 'CAD',
-      });
-      announce(context, 'Added ${line.qty} ${line.name} to your order.');
-    }
-  }
-
-  void _startOrder() {
-    final menu = _menuKey.currentContext;
-    if (menu != null) {
-      Scrollable.ensureVisible(
-        menu,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<Storefront>(
-      future: _store,
-      builder: (context, snap) {
-        if (snap.hasError) {
-          if (isNotFound(snap.error!)) return const NotFoundScreen();
-          return SitePage(
-            title: 'Order online',
-            noindex: true,
-            path: '/${widget.slug}',
-            child: Scaffold(
-              body: ErrorState(
-                message: errorMessage(snap.error!),
-                onRetry: _retry,
-              ),
-            ),
-          );
-        }
-        if (!snap.hasData) {
-          return SitePage(
-            title: 'Order online',
-            path: '/${widget.slug}',
-            child: const Scaffold(
-              key: Key('store-loading'),
-              body: LoadingState('Loading the menu…'),
-            ),
-          );
-        }
-        final store = snap.data!;
-        final theme = Theme.of(context);
-        final where = store.address == null ? '' : ' at ${store.address}';
-        return SitePage(
-          title: '${store.displayName} · Order online for pickup',
-          description:
-              'Order ${store.brandName.isEmpty ? store.displayName : store.brandName} '
-              'ahead for pickup$where. Ready in about '
-              '${store.pickupLeadMinutes} minutes.',
-          path: '/${store.slug}',
-          child: Scaffold(
-            appBar: AppBar(title: Text(store.displayName)),
-            body: ResponsiveBody(
-              maxWidth: 720,
-              bottomPadding: 96,
-              children: [
-                _StoreHeader(
-                  store: store,
-                  onStart: store.open ? _startOrder : null,
-                ),
-                SizedBox(key: _menuKey, height: 8),
-                for (final section in store.sections) ...[
-                  Padding(
-                    padding: const EdgeInsets.only(top: 16, bottom: 4),
-                    child: Semantics(
-                      header: true,
-                      child: Text(
-                        section.category.name,
-                        style: theme.textTheme.titleLarge,
-                      ),
-                    ),
-                  ),
-                  for (final entry in section.items)
-                    ListTile(
-                      key: Key('menu-${entry.item.id}'),
-                      contentPadding: EdgeInsets.zero,
-                      enabled: store.open && entry.available,
-                      title: Text(entry.item.name),
-                      subtitle: entry.item.description == null
-                          ? null
-                          : Text(entry.item.description!),
-                      trailing: Text(
-                        entry.available
-                            ? formatCad(entry.priceCents)
-                            : 'Sold out',
-                      ),
-                      onTap: () => _add(store, entry),
-                    ),
-                ],
-                if (store.sections.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 24),
-                    child: Text('The menu is empty right now.'),
-                  ),
-                SiteFooter(store: store),
-              ],
-            ),
-            // The sticky call to action: always within thumb reach on a phone.
-            bottomNavigationBar: _cart.isEmpty || !store.open
-                ? null
-                : SafeArea(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: FilledButton(
-                        key: const Key('view-order'),
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size.fromHeight(52),
-                        ),
-                        onPressed: () async {
-                          SiteScope.of(context).analytics
-                              .event('begin_checkout', {
-                                'value': _cart.totals.totalCents / 100,
-                                'currency': 'CAD',
-                              });
-                          final result = await Navigator.of(context).push<Cart>(
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  CheckoutScreen(store: store, cart: _cart),
-                            ),
-                          );
-                          if (result != null) setState(() => _cart = result);
-                        },
-                        child: Text(
-                          'View order · ${_cart.itemCount} · ${formatCad(_cart.totals.totalCents)}',
-                        ),
-                      ),
-                    ),
-                  ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-/// The top of the store page: who, where, when, and the button to start.
-class _StoreHeader extends StatelessWidget {
-  const _StoreHeader({required this.store, required this.onStart});
-  final Storefront store;
-  final VoidCallback? onStart;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Semantics(
-            header: true,
-            child: Text(
-              store.brandName.isEmpty ? store.displayName : store.brandName,
-              style: theme.textTheme.headlineMedium,
-            ),
-          ),
-          if (store.brandName.isNotEmpty && store.locationName.isNotEmpty)
-            Text(store.locationName, style: theme.textTheme.titleMedium),
-          const SizedBox(height: 8),
-          if (!store.open)
-            Card(
-              key: const Key('closed'),
-              margin: const EdgeInsets.symmetric(vertical: 8),
-              color: theme.colorScheme.errorContainer,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  store.closedReason ?? 'Not taking orders right now.',
-                ),
-              ),
-            )
-          else
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.schedule,
-                    size: 20,
-                    color: theme.colorScheme.primary,
-                  ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      'Pickup in about ${store.pickupLeadMinutes} minutes',
-                      style: theme.textTheme.bodyLarge,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          StoreContact(address: store.address, phone: store.phone),
-          if (onStart != null) ...[
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              key: const Key('start-order'),
-              style: FilledButton.styleFrom(minimumSize: const Size(200, 48)),
-              onPressed: onStart,
-              icon: const Icon(Icons.restaurant_menu),
-              label: const Text('Start your order'),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _ItemSheet extends StatefulWidget {
-  const _ItemSheet({required this.entry, required this.lineId});
-  final LocationMenuItem entry;
-  final String lineId;
-
-  @override
-  State<_ItemSheet> createState() => _ItemSheetState();
-}
-
-class _ItemSheetState extends State<_ItemSheet> {
-  final Map<String, List<String>> _picks = {};
-  final _notes = TextEditingController();
-  var _qty = 1;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    for (final g in widget.entry.modifierGroups) {
-      _picks[g.id] = g.minSelect == 1 && g.maxSelect == 1
-          ? [g.options.first.id]
-          : [];
-    }
-  }
-
-  @override
-  void dispose() {
-    _notes.dispose();
-    super.dispose();
-  }
-
-  OrderLine? _build({bool report = false}) {
-    try {
-      return OrderLine.fromMenu(
-        lineId: widget.lineId,
-        entry: widget.entry,
-        selections: _picks,
-        qty: _qty,
-        notes: _notes.text,
-      );
-    } on MenuValidationError catch (e) {
-      if (report) setState(() => _error = e.message);
-      return null;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final line = _build();
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(widget.entry.item.name, style: theme.textTheme.headlineSmall),
-            if (widget.entry.item.description != null)
-              Text(widget.entry.item.description!),
-            for (final g in widget.entry.modifierGroups) ...[
-              Padding(
-                padding: const EdgeInsets.only(top: 16, bottom: 6),
-                child: Text(
-                  g.required ? '${g.name} (required)' : g.name,
-                  style: theme.textTheme.titleSmall,
-                ),
-              ),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final o in g.options)
-                    FilterChip(
-                      key: Key('pick-${g.id}-${o.id}'),
-                      label: Text(
-                        o.priceDeltaCents > 0
-                            ? '${o.name} +${formatCad(o.priceDeltaCents)}'
-                            : o.name,
-                      ),
-                      selected: _picks[g.id]!.contains(o.id),
-                      onSelected: (_) => setState(() {
-                        _error = null;
-                        final picks = _picks[g.id]!;
-                        if (g.maxSelect == 1) {
-                          _picks[g.id] = [o.id];
-                        } else if (picks.contains(o.id)) {
-                          picks.remove(o.id);
-                        } else if (picks.length < g.maxSelect) {
-                          picks.add(o.id);
-                        }
-                      }),
-                    ),
-                ],
-              ),
-            ],
-            TextField(
-              controller: _notes,
-              maxLength: 140,
-              decoration: const InputDecoration(labelText: 'Special requests'),
-            ),
-            Row(
-              children: [
-                IconButton(
-                  tooltip: 'One fewer',
-                  onPressed: _qty > 1 ? () => setState(() => _qty--) : null,
-                  icon: const Icon(Icons.remove_circle_outline),
-                ),
-                Semantics(
-                  label: 'Quantity $_qty',
-                  excludeSemantics: true,
-                  child: Text('$_qty', style: theme.textTheme.titleLarge),
-                ),
-                IconButton(
-                  tooltip: 'One more',
-                  onPressed: _qty < 20 ? () => setState(() => _qty++) : null,
-                  icon: const Icon(Icons.add_circle_outline),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton(
-                    key: const Key('add'),
-                    onPressed: () {
-                      final built = _build(report: true);
-                      if (built != null) Navigator.of(context).pop(built);
-                    },
-                    child: Text(
-                      line == null
-                          ? 'Add'
-                          : 'Add · ${formatCad(line.lineTotalCents)}',
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: ErrorBanner(_error!),
-              ),
           ],
         ),
       ),
@@ -747,159 +331,236 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 : AutovalidateMode.disabled,
             child: AutofillGroup(
               child: ResponsiveBody(
-                maxWidth: 560,
+                maxWidth: 640,
+                bottomPadding: 32,
                 children: [
-                  for (final line in _cart.lines)
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text('${line.qty} × ${line.name}'),
-                      subtitle: line.modifiers.isEmpty && line.notes == null
-                          ? null
-                          : Text(
-                              [
-                                ...line.modifiers.map((m) => m.name),
-                                ?line.notes,
-                              ].join(', '),
-                            ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(formatCad(line.lineTotalCents)),
-                          IconButton(
-                            tooltip: 'Remove one ${line.name}',
-                            onPressed: _busy
-                                ? null
-                                : () => setState(
-                                    () => _cart = _cart.setQty(
-                                      line.lineId,
-                                      line.qty - 1,
-                                    ),
-                                  ),
-                            icon: const Icon(Icons.remove_circle_outline),
-                          ),
-                        ],
-                      ),
-                    ),
-                  if (_cart.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      child: Text(
-                        'Your order is empty. Go back to add something.',
-                      ),
-                    ),
-                  const Divider(),
-                  for (final (label, cents) in [
-                    ('Subtotal', totals.subtotalCents),
-                    for (final t in totals.taxes) (t.name, t.cents),
-                    ('Total', totals.totalCents),
-                  ])
-                    Row(
+                  CheckoutSection(
+                    icon: Icons.receipt_long_outlined,
+                    title: 'Your order',
+                    child: Column(
                       children: [
-                        Expanded(child: Text(label)),
-                        Text(
-                          formatCad(cents),
-                          key: label == 'Total'
-                              ? const Key('checkout-total')
+                        for (final line in _cart.lines)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '${line.qty} × ${line.name}',
+                                        style: theme.textTheme.titleSmall,
+                                      ),
+                                      if (line.modifiers.isNotEmpty ||
+                                          line.notes != null)
+                                        Text(
+                                          [
+                                            ...line.modifiers.map(
+                                              (m) => m.name,
+                                            ),
+                                            ?line.notes,
+                                          ].join(', '),
+                                          style: theme.textTheme.bodySmall,
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                Text(formatCad(line.lineTotalCents)),
+                                IconButton(
+                                  visualDensity: VisualDensity.compact,
+                                  tooltip: 'Remove one ${line.name}',
+                                  onPressed: _busy
+                                      ? null
+                                      : () => setState(
+                                          () => _cart = _cart.setQty(
+                                            line.lineId,
+                                            line.qty - 1,
+                                          ),
+                                        ),
+                                  icon: const Icon(Icons.remove_circle_outline),
+                                ),
+                              ],
+                            ),
+                          ),
+                        if (_cart.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Text(
+                              'Your order is empty. Go back to add something.',
+                            ),
+                          ),
+                        const Divider(height: 24),
+                        for (final (label, cents) in [
+                          ('Subtotal', totals.subtotalCents),
+                          for (final t in totals.taxes) (t.name, t.cents),
+                          ('Total', totals.totalCents),
+                        ])
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    label,
+                                    style: label == 'Total'
+                                        ? theme.textTheme.titleMedium
+                                        : null,
+                                  ),
+                                ),
+                                Text(
+                                  formatCad(cents),
+                                  key: label == 'Total'
+                                      ? const Key('checkout-total')
+                                      : null,
+                                  style: label == 'Total'
+                                      ? theme.textTheme.titleMedium
+                                      : null,
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  CheckoutSection(
+                    icon: Icons.person_outline,
+                    title: 'Who it\'s for',
+                    child: Column(
+                      children: [
+                        TextFormField(
+                          key: const Key('name'),
+                          controller: _name,
+                          maxLength: 60,
+                          enabled: !_busy,
+                          textCapitalization: TextCapitalization.words,
+                          textInputAction: TextInputAction.next,
+                          autofillHints: const [AutofillHints.name],
+                          decoration: const InputDecoration(
+                            labelText: 'Name for the order',
+                            prefixIcon: Icon(Icons.badge_outlined),
+                          ),
+                          validator: (v) => (v ?? '').trim().isEmpty
+                              ? 'We need a name to call out.'
                               : null,
                         ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          key: const Key('phone'),
+                          controller: _phone,
+                          enabled: !_busy,
+                          keyboardType: TextInputType.phone,
+                          textInputAction: TextInputAction.next,
+                          autofillHints: const [AutofillHints.telephoneNumber],
+                          decoration: const InputDecoration(
+                            labelText: 'Phone (optional, in case of a problem)',
+                            prefixIcon: Icon(Icons.call_outlined),
+                          ),
+                          validator: validatePhone,
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          key: const Key('email'),
+                          controller: _email,
+                          enabled: !_busy,
+                          keyboardType: TextInputType.emailAddress,
+                          textInputAction: TextInputAction.done,
+                          autofillHints: const [AutofillHints.email],
+                          decoration: const InputDecoration(
+                            labelText: 'Email (optional, for a receipt)',
+                            prefixIcon: Icon(Icons.mail_outline),
+                          ),
+                          validator: validateEmail,
+                        ),
                       ],
                     ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    key: const Key('name'),
-                    controller: _name,
-                    maxLength: 60,
-                    enabled: !_busy,
-                    textCapitalization: TextCapitalization.words,
-                    textInputAction: TextInputAction.next,
-                    autofillHints: const [AutofillHints.name],
-                    decoration: const InputDecoration(
-                      labelText: 'Name for the order',
-                    ),
-                    validator: (v) => (v ?? '').trim().isEmpty
-                        ? 'We need a name to call out.'
-                        : null,
                   ),
-                  TextFormField(
-                    key: const Key('phone'),
-                    controller: _phone,
-                    enabled: !_busy,
-                    keyboardType: TextInputType.phone,
-                    textInputAction: TextInputAction.next,
-                    autofillHints: const [AutofillHints.telephoneNumber],
-                    decoration: const InputDecoration(
-                      labelText: 'Phone (optional, in case of a problem)',
+                  CheckoutSection(
+                    icon: Icons.schedule,
+                    title: 'Pickup',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        DropdownButtonFormField<DateTime?>(
+                          key: const Key('pickup'),
+                          isExpanded: true,
+                          initialValue: _pickupAt,
+                          decoration: const InputDecoration(labelText: 'When'),
+                          items: [
+                            for (final slot in _slots)
+                              DropdownMenuItem(
+                                value: slot,
+                                child: Text(
+                                  slot == null
+                                      ? 'As soon as possible (about ${store.pickupLeadMinutes} min)'
+                                      : TimeOfDay.fromDateTime(slot)
+                                            .format(context),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                          ],
+                          onChanged: _busy
+                              ? null
+                              : (v) => setState(() => _pickupAt = v),
+                        ),
+                        if (store.address != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.place_outlined, size: 20),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text('Pick up at ${store.address}'),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
                     ),
-                    validator: validatePhone,
+                  ),
+                  CheckoutSection(
+                    icon: Icons.payments_outlined,
+                    title: 'Payment',
+                    child: store.payAtPickup && store.payOnline
+                        ? Column(
+                            children: [
+                              PaymentOption(
+                                key: const Key('pay-online'),
+                                icon: Icons.credit_card,
+                                title: 'Pay now by card',
+                                subtitle: 'Secure checkout by Stripe',
+                                selected: online,
+                                onTap: _busy
+                                    ? null
+                                    : () => setState(
+                                        () => _payment = OnlinePayment.online,
+                                      ),
+                              ),
+                              const SizedBox(height: 8),
+                              PaymentOption(
+                                key: const Key('pay-at-pickup'),
+                                icon: Icons.storefront_outlined,
+                                title: 'Pay at pickup',
+                                subtitle: 'Cash or card at the counter',
+                                selected: !online,
+                                onTap: _busy
+                                    ? null
+                                    : () => setState(
+                                        () => _payment = OnlinePayment.atPickup,
+                                      ),
+                              ),
+                            ],
+                          )
+                        : Text(
+                            online
+                                ? 'You\'ll pay by card on the next page.'
+                                : 'Pay when you pick up.',
+                          ),
                   ),
                   const SizedBox(height: 8),
-                  TextFormField(
-                    key: const Key('email'),
-                    controller: _email,
-                    enabled: !_busy,
-                    keyboardType: TextInputType.emailAddress,
-                    textInputAction: TextInputAction.done,
-                    autofillHints: const [AutofillHints.email],
-                    decoration: const InputDecoration(
-                      labelText: 'Email (optional, for a receipt)',
-                    ),
-                    validator: validateEmail,
-                  ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<DateTime?>(
-                    key: const Key('pickup'),
-                    isExpanded: true,
-                    initialValue: _pickupAt,
-                    decoration: const InputDecoration(labelText: 'Pickup'),
-                    items: [
-                      for (final slot in _slots)
-                        DropdownMenuItem(
-                          value: slot,
-                          child: Text(
-                            slot == null
-                                ? 'As soon as possible (about ${store.pickupLeadMinutes} min)'
-                                : TimeOfDay.fromDateTime(slot).format(context),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                    ],
-                    onChanged: _busy
-                        ? null
-                        : (v) => setState(() => _pickupAt = v),
-                  ),
-                  if (store.address != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        'Pick up at ${store.address}',
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                    ),
-                  const SizedBox(height: 16),
-                  if (store.payAtPickup && store.payOnline)
-                    SegmentedButton<OnlinePayment>(
-                      segments: const [
-                        ButtonSegment(
-                          value: OnlinePayment.online,
-                          label: Text('Pay now by card'),
-                        ),
-                        ButtonSegment(
-                          value: OnlinePayment.atPickup,
-                          label: Text('Pay at pickup'),
-                        ),
-                      ],
-                      selected: {_payment},
-                      onSelectionChanged: _busy
-                          ? null
-                          : (s) => setState(() => _payment = s.single),
-                    )
-                  else
-                    Text(
-                      online
-                          ? 'You\'ll pay by card on the next page.'
-                          : 'Pay when you pick up.',
-                    ),
-                  const SizedBox(height: 16),
                   Text(
                     'Prices include the restaurant\'s current menu and taxes; '
                     'the restaurant confirms the final total.',
@@ -976,6 +637,117 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A titled white card grouping one step of checkout.
+class CheckoutSection extends StatelessWidget {
+  const CheckoutSection({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.child,
+  });
+  final IconData icon;
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, size: 22, color: SiteColors.brand),
+                  const SizedBox(width: 8),
+                  Semantics(
+                    header: true,
+                    child: Text(title, style: theme.textTheme.titleMedium),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              child,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One way to pay, as a big tappable card with a radio mark.
+class PaymentOption extends StatelessWidget {
+  const PaymentOption({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Semantics(
+      inMutuallyExclusiveGroup: true,
+      checked: selected,
+      button: true,
+      label: '$title. $subtitle',
+      excludeSemantics: true,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(SiteRadius.button),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: selected
+                ? theme.colorScheme.primaryContainer.withValues(alpha: 0.5)
+                : Colors.white,
+            borderRadius: BorderRadius.circular(SiteRadius.button),
+            border: Border.all(
+              color: selected
+                  ? SiteColors.brand
+                  : theme.colorScheme.outlineVariant,
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: selected ? SiteColors.brand : null),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: theme.textTheme.titleSmall),
+                    Text(subtitle, style: theme.textTheme.bodySmall),
+                  ],
+                ),
+              ),
+              Icon(
+                selected ? Icons.radio_button_checked : Icons.radio_button_off,
+                color: selected ? SiteColors.brand : theme.colorScheme.outline,
+              ),
+            ],
           ),
         ),
       ),
@@ -1106,56 +878,117 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
       child: Scaffold(
         appBar: AppBar(title: Text('Order ${p.ticket}')),
         body: ResponsiveBody(
-          maxWidth: 560,
+          maxWidth: 600,
           children: [
-            if (thanks) ...[
-              Icon(
-                Icons.check_circle_outline,
-                size: 56,
-                color: theme.colorScheme.primary,
-                semanticLabel: 'Order placed',
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Thank you for your order!',
-                key: const Key('thank-you'),
-                style: theme.textTheme.titleLarge,
-              ),
-              const SizedBox(height: 4),
-            ],
-            Semantics(
-              liveRegion: true,
-              child: Text(
-                headline,
-                key: const Key('status-headline'),
-                style: theme.textTheme.headlineMedium,
-              ),
-            ),
-            Text(detail, style: theme.textTheme.bodyLarge),
-            const SizedBox(height: 8),
-            Text(
-              'Your number is ${p.ticket}.'
-              '${pickup == null ? '' : ' Pickup around ${TimeOfDay.fromDateTime(pickup).format(context)}.'}',
-            ),
-            if (p.status == OrderStatus.awaitingPayment &&
-                p.checkoutUrl != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 16),
-                child: FilledButton(
-                  onPressed: () =>
-                      SiteScope.of(context).openUrl(Uri.parse(p.checkoutUrl!)),
-                  child: const Text('Pay now'),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  children: [
+                    if (thanks) ...[
+                      Container(
+                        width: 72,
+                        height: 72,
+                        decoration: BoxDecoration(
+                          color: SiteColors.success.withValues(alpha: 0.12),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.check_rounded,
+                          size: 44,
+                          color: SiteColors.success,
+                          semanticLabel: 'Order placed',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Thank you for your order!',
+                        key: const Key('thank-you'),
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    Text(
+                      'Your number',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    Container(
+                      margin: const EdgeInsets.only(top: 4, bottom: 16),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primaryContainer.withValues(
+                          alpha: 0.6,
+                        ),
+                        borderRadius: BorderRadius.circular(SiteRadius.button),
+                      ),
+                      child: Semantics(
+                        label: 'Your number is ${p.ticket}',
+                        excludeSemantics: true,
+                        child: Text(
+                          p.ticket,
+                          key: const Key('ticket'),
+                          style: theme.textTheme.displaySmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: SiteColors.brand,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Semantics(
+                      liveRegion: true,
+                      child: Text(
+                        headline,
+                        key: const Key('status-headline'),
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.headlineSmall,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      detail,
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyLarge,
+                    ),
+                    const SizedBox(height: 4),
+                    if (pickup != null)
+                      Text(
+                        'Pickup around ${TimeOfDay.fromDateTime(pickup).format(context)}.',
+                        textAlign: TextAlign.center,
+                      ),
+                    if (OrderTracker.stepOf(p.status) != null) ...[
+                      const SizedBox(height: 20),
+                      OrderTracker(status: p.status),
+                    ],
+                    if (p.status == OrderStatus.awaitingPayment &&
+                        p.checkoutUrl != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 16),
+                        child: FilledButton(
+                          onPressed: () =>
+                              SiteScope.of(context)
+                                  .openUrl(Uri.parse(p.checkoutUrl!)),
+                          child: const Text('Pay now'),
+                        ),
+                      ),
+                  ],
                 ),
               ),
+            ),
             if (p.storeName.isNotEmpty || p.address != null || p.phone != null)
-              Card(
-                margin: const EdgeInsets.only(top: 16),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: CheckoutSection(
+                  icon: Icons.storefront_outlined,
+                  title: 'Pick up at',
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Pick up at', style: theme.textTheme.labelLarge),
                       if (p.storeName.isNotEmpty)
                         Text(p.storeName, style: theme.textTheme.titleMedium),
                       StoreContact(address: p.address, phone: p.phone),
@@ -1163,38 +996,140 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
                   ),
                 ),
               ),
-            const Divider(height: 32),
-            for (final l in p.items)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Text(
-                  '${l.qty} × ${l.name}'
-                  '${l.modifiers.isEmpty ? '' : ' (${l.modifiers.join(', ')})'}',
-                ),
+            CheckoutSection(
+              icon: Icons.receipt_long_outlined,
+              title: 'Your order',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final l in p.items)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Text(
+                        '${l.qty} × ${l.name}'
+                        '${l.modifiers.isEmpty ? '' : ' (${l.modifiers.join(', ')})'}',
+                      ),
+                    ),
+                  const Divider(height: 20),
+                  Text(
+                    'Total ${formatCad(p.totalCents)}'
+                    '${p.paymentStatus == PaymentStatus.paid ? ' · paid' : ' · pay at pickup'}',
+                    style: theme.textTheme.titleMedium,
+                  ),
+                ],
               ),
-            const SizedBox(height: 8),
-            Text(
-              'Total ${formatCad(p.totalCents)}'
-              '${p.paymentStatus == PaymentStatus.paid ? ' · paid' : ' · pay at pickup'}',
-              style: theme.textTheme.titleMedium,
             ),
-            const SizedBox(height: 16),
             Text(
-              'Keep this page open or bookmark it to follow your order.',
+              'This page updates by itself. Keep it open or bookmark it to '
+              'follow your order.',
+              textAlign: TextAlign.center,
               style: theme.textTheme.bodySmall,
             ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: OutlinedButton(
-                key: const Key('order-again'),
-                onPressed: () => Navigator.of(context)
-                    .pushNamedAndRemoveUntil('/${widget.slug}', (_) => false),
-                child: const Text('Order something else'),
-              ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              key: const Key('order-again'),
+              onPressed: () =>
+                  Navigator.of(context)
+                      .pushNamedAndRemoveUntil('/${widget.slug}', (_) => false),
+              icon: const Icon(Icons.add_shopping_cart),
+              label: const Text('Order something else'),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Received → Being made → Ready → Picked up, with the current step lit.
+class OrderTracker extends StatelessWidget {
+  const OrderTracker({super.key, required this.status});
+  final OrderStatus status;
+
+  static const steps = ['Received', 'Being made', 'Ready', 'Picked up'];
+
+  /// Which step [status] is, or null when it's off the happy path.
+  static int? stepOf(OrderStatus status) => switch (status) {
+    OrderStatus.newOrder => 0,
+    OrderStatus.inProgress => 1,
+    OrderStatus.ready => 2,
+    OrderStatus.completed => 3,
+    _ => null,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final current = stepOf(status) ?? 0;
+    final idle = theme.colorScheme.outlineVariant;
+    return Semantics(
+      key: const Key('order-tracker'),
+      container: true,
+      label: 'Step ${current + 1} of ${steps.length}: ${steps[current]}',
+      excludeSemantics: true,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var i = 0; i < steps.length; i++)
+            Expanded(
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          height: 3,
+                          color: i == 0
+                              ? Colors.transparent
+                              : (i <= current ? SiteColors.success : idle),
+                        ),
+                      ),
+                      Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: i <= current ? SiteColors.success : idle,
+                        ),
+                        child: i < current || current == steps.length - 1
+                            ? const Icon(
+                                Icons.check,
+                                size: 16,
+                                color: Colors.white,
+                              )
+                            : i == current
+                            ? const Icon(
+                                Icons.circle,
+                                size: 10,
+                                color: Colors.white,
+                              )
+                            : null,
+                      ),
+                      Expanded(
+                        child: Container(
+                          height: 3,
+                          color: i == steps.length - 1
+                              ? Colors.transparent
+                              : (i < current ? SiteColors.success : idle),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    steps[i],
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      fontWeight: i == current ? FontWeight.w700 : null,
+                      color: i <= current
+                          ? SiteColors.ink
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }
