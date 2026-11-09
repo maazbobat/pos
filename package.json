@@ -1,13 +1,22 @@
 {
   "name": "pos-monorepo",
   "private": true,
-  "workspaces": ["functions", "tests/rules"],
-  "engines": { "node": ">=22" },
+  "workspaces": [
+    "functions",
+    "tests/rules"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build:functions": "npm run build -w functions",
     "test:rules": "firebase emulators:exec --only firestore --project demo-pos \"npm test -w tests/rules\"",
     "seed:dev": "node functions/scripts/seed-dev.mjs",
-    "test:functions": "firebase emulators:exec --only firestore,auth --project demo-pos \"npm test -w functions\""
+    "test:functions": "firebase emulators:exec --only firestore,auth --project demo-pos \"npm test -w functions\"",
+    "test:env": "node --test scripts/env.test.mjs",
+    "env:check": "node scripts/env.mjs check",
+    "deploy:dev": "node scripts/env.mjs prepare dev && ./scripts/build-web.sh dev && firebase deploy --project dev --non-interactive",
+    "deploy:staging": "node scripts/env.mjs prepare staging && ./scripts/build-web.sh staging && firebase deploy --project staging --non-interactive"
   },
   "devDependencies": {
     "firebase-tools": "^15.34.2"

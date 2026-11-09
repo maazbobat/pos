@@ -57,9 +57,10 @@ Store web addresses can't be the site's own paths (`privacy`, `terms`,
   project (or a GA4 property), then build with
   `flutter build web --dart-define=ANALYTICS_MEASUREMENT_ID=G-XXXXXXX`.
   Without it there's no analytics and no cookie banner.
-- Set `ORDERING_SITE_URL` for the Functions (the site's public address, no
-  trailing slash), build `apps/online` (`flutter build web --release`), and
-  deploy Hosting and Functions together. Connect a custom domain in Hosting.
+- Set up the environments ([environments.md](environments.md)). The site's
+  address is `ORDERING_SITE_URL` in `config/<env>.json`, and the deploy
+  workflow builds and ships the site and Functions together. When you
+  connect a custom domain in Hosting, update `ORDERING_SITE_URL` to match.
 - Make sure each location has its street address. Today only the platform
   admin sets it, when creating the location.
 - Submit `https://<site>/sitemap.xml` in Google Search Console.

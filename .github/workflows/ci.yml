@@ -1,11 +1,27 @@
 name: CI
 
+# Pull requests run this directly. Pushes to main run it through deploy.yml,
+# which deploys staging only after it passes.
 on:
   pull_request:
-  push:
-    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
 
 jobs:
+  env:
+    name: Environment config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Shape and .firebaserc sync only; unfinished environments are fine here.
+      - run: node scripts/env.mjs check
+      - run: npm run test:env
+
   dart:
     name: Flutter analyze, Dart and widget tests
     runs-on: ubuntu-latest
