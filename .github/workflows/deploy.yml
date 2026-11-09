@@ -1,0 +1,157 @@
+name: Deploy
+
+# staging: every push to main, after CI passes. Skipped with a notice until
+#          config/staging.json is filled in.
+# prod:    a version tag (v1.2.3) on a commit that's on main, or a manual run
+#          from main. The GitHub "prod" environment's required reviewers
+#          approve it before anything is deployed.
+# dev:     a manual run from any branch.
+# See docs/environments.md.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Where to deploy
+        type: choice
+        options: [dev, staging, prod]
+        default: dev
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.event_name == 'workflow_dispatch' && inputs.environment || (startsWith(github.ref, 'refs/tags/') && 'prod' || 'staging') }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  target:
+    name: Pick environment
+    runs-on: ubuntu-latest
+    outputs:
+      env: ${{ steps.pick.outputs.env }}
+      ready: ${{ steps.pick.outputs.ready }}
+      site_url: ${{ steps.pick.outputs.site_url }}
+      manager_url: ${{ steps.pick.outputs.manager_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: pick
+        env:
+          INPUT_ENV: ${{ inputs.environment }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            env="$INPUT_ENV"
+          elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            env=prod
+          else
+            env=staging
+          fi
+          echo "env=$env" >> "$GITHUB_OUTPUT"
+
+          # Prod only ships what's on main.
+          if [ "$env" = prod ]; then
+            git fetch --quiet origin main
+            if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+              echo "::error::Prod deploys must be a commit on main (a tag on main, or a manual run from main)."
+              exit 1
+            fi
+          fi
+
+          if [ "$(node scripts/env.mjs ready "$env")" = true ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "site_url=$(node scripts/env.mjs get "$env" ORDERING_SITE_URL)" >> "$GITHUB_OUTPUT"
+            echo "manager_url=$(node scripts/env.mjs get "$env" MANAGER_APP_URL)" >> "$GITHUB_OUTPUT"
+          elif [ "$GITHUB_EVENT_NAME" = push ] && [ "$env" = staging ]; then
+            echo "::notice::Staging isn't set up yet (config/staging.json), so nothing was deployed. See docs/environments.md."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            node scripts/env.mjs check --ready "$env"
+          fi
+
+  deploy:
+    name: Deploy to ${{ needs.target.outputs.env }}
+    needs: [ci, target]
+    if: needs.target.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ needs.target.outputs.env }}
+      url: ${{ needs.target.outputs.site_url }}
+    permissions:
+      contents: read
+      id-token: write # keyless sign-in to Google Cloud
+    env:
+      DEPLOY_ENV: ${{ needs.target.outputs.env }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: npm ci
+      - run: flutter pub get
+      - name: Check config and write the Functions params
+        run: node scripts/env.mjs prepare "$DEPLOY_ENV"
+      - name: Build the web apps
+        run: ./scripts/build-web.sh "$DEPLOY_ENV"
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      # Rules, indexes, Functions and the three Hosting sites together, so the
+      # apps and the backend they call never drift apart. --force lets a
+      # deploy delete Functions removed from the code.
+      - name: Deploy
+        run: >
+          npx firebase deploy --project "$DEPLOY_ENV" --non-interactive --force
+          --message "${GITHUB_SHA::7} ${GITHUB_REF_NAME}"
+      - name: Check the sites answer
+        env:
+          SITE_URL: ${{ needs.target.outputs.site_url }}
+          MANAGER_URL: ${{ needs.target.outputs.manager_url }}
+        run: |
+          curl -fsS --retry 5 --retry-delay 10 --retry-all-errors "$SITE_URL/robots.txt" > /dev/null
+          curl -fsS --retry 5 --retry-delay 10 --retry-all-errors "$MANAGER_URL/" > /dev/null
+          echo "Ordering site: $SITE_URL"
+          echo "Manager app: $MANAGER_URL"
+
+  pos-apk:
+    name: Build the POS app for ${{ needs.target.outputs.env }}
+    needs: [ci, target]
+    if: needs.target.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY_ENV: ${{ needs.target.outputs.env }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      # Signed with the debug key until a release key is set up, so it's for
+      # sideloading onto the counter tablets, not for Google Play.
+      - working-directory: apps/pos
+        run: flutter build apk --release --dart-define-from-file="$GITHUB_WORKSPACE/config/$DEPLOY_ENV.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pos-${{ needs.target.outputs.env }}-${{ github.sha }}
+          path: apps/pos/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30

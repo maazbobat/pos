@@ -5,48 +5,27 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:pos_shared/pos_shared.dart';
 
+import 'environment.dart';
 import 'orders_backend.dart';
 
-/// Where the apps connect. Until real dev, staging and prod projects exist,
-/// every build talks to the local emulators under the `demo-pos` project ID,
-/// which can't reach anything real.
-///
-/// Run with `--dart-define=EMULATOR_HOST=10.0.2.2` on an Android emulator
-/// (or the LAN IP of the machine running `firebase emulators:start` when
-/// testing on a tablet).
-class BackendConfig {
-  const BackendConfig({
-    this.projectId = 'demo-pos',
-    this.emulatorHost = const String.fromEnvironment(
-      'EMULATOR_HOST',
-      defaultValue: 'localhost',
-    ),
-  });
-
-  final String projectId;
-  final String emulatorHost;
-}
-
+/// Connects to the Firebase project this build was made for (see
+/// [AppEnvironment] and docs/environments.md). With no dart-defines that's
+/// the local emulators under the `demo-pos` project ID.
 Future<Backend> initFirebaseBackend([
-  BackendConfig config = const BackendConfig(),
+  AppEnvironment env = AppEnvironment.current,
 ]) async {
-  final app = await Firebase.initializeApp(
-    options: FirebaseOptions(
-      apiKey: 'demo-api-key',
-      appId: '1:0:web:0',
-      messagingSenderId: '0',
-      projectId: config.projectId,
-    ),
-  );
+  final app = await Firebase.initializeApp(options: firebaseOptionsFor(env));
   final auth = FirebaseAuth.instanceFor(app: app);
   final firestore = FirebaseFirestore.instanceFor(app: app);
   final functions = FirebaseFunctions.instanceFor(
     app: app,
     region: Callables.region,
   );
-  await auth.useAuthEmulator(config.emulatorHost, 9099);
-  firestore.useFirestoreEmulator(config.emulatorHost, 8080);
-  functions.useFunctionsEmulator(config.emulatorHost, 5001);
+  if (env.usesEmulators) {
+    await auth.useAuthEmulator(env.emulatorHost, 9099);
+    firestore.useFirestoreEmulator(env.emulatorHost, 8080);
+    functions.useFunctionsEmulator(env.emulatorHost, 5001);
+  }
 
   return Backend(
     auth: FirebaseAuthGateway(auth),
@@ -61,21 +40,16 @@ Future<Backend> initFirebaseBackend([
 
 /// For the public ordering site: only the storefront Functions, no sign-in.
 Future<StorefrontBackend> initStorefrontBackend([
-  BackendConfig config = const BackendConfig(),
+  AppEnvironment env = AppEnvironment.current,
 ]) async {
-  final app = await Firebase.initializeApp(
-    options: FirebaseOptions(
-      apiKey: 'demo-api-key',
-      appId: '1:0:web:0',
-      messagingSenderId: '0',
-      projectId: config.projectId,
-    ),
-  );
+  final app = await Firebase.initializeApp(options: firebaseOptionsFor(env));
   final functions = FirebaseFunctions.instanceFor(
     app: app,
     region: Callables.region,
   );
-  functions.useFunctionsEmulator(config.emulatorHost, 5001);
+  if (env.usesEmulators) {
+    functions.useFunctionsEmulator(env.emulatorHost, 5001);
+  }
   return FirebaseStorefrontBackend(functions);
 }
 

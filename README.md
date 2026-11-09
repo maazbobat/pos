@@ -24,7 +24,9 @@ receipt and kitchen printing are in [docs/counter.md](docs/counter.md).
 | `functions/` | Cloud Functions (TypeScript, Node 22) |
 | `firestore.rules` | Tenant isolation and role permissions |
 | `tests/rules/` | Emulator tests for the rules, including the permission matrix as data |
-| `docs/` | Schema, permissions, onboarding, billing and payments, monitoring |
+| `config/` | Per-environment settings for dev, staging and prod |
+| `scripts/` | Environment checks and web builds for deploys |
+| `docs/` | Schema, permissions, onboarding, billing and payments, monitoring, environments |
 
 ## Running checks
 
@@ -37,6 +39,7 @@ flutter pub get && flutter analyze      # Dart workspace
 npm ci
 npm run test:rules                      # Firestore emulator + rules tests
 npm run test:functions                  # Cloud Functions against the emulators
+npm run test:env                        # config/*.json and .firebaserc
 ```
 
 ## Trying the apps locally
@@ -62,6 +65,12 @@ tablet as a kitchen display to see tickets. In the manager app's Online tab,
 turn on online ordering, then order from the site and take the cash at
 pickup from the POS's Orders screen.
 
-The Firebase config points only at the `demo-pos` project ID, which the
-emulator treats as offline. No real Firebase project is configured yet; dev,
-staging and prod projects come later.
+With no settings these builds use the `demo-pos` project ID, which the
+emulator treats as offline.
+
+## Environments and deploys
+
+Dev, staging and prod are separate Firebase projects. Staging deploys on
+every merge to `main`; prod deploys from a version tag after approval in
+GitHub. Settings live in `config/<env>.json`, and the one-time setup for
+each project is in [docs/environments.md](docs/environments.md).

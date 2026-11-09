@@ -1,6 +1,7 @@
 /// Tenant models, Firestore paths and role definitions shared by every app.
 library;
 
+export 'src/app_environment.dart';
 export 'src/backend.dart';
 export 'src/callables.dart';
 export 'src/commercial.dart';

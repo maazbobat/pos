@@ -20,3 +20,6 @@ firebase-export-*/
 # OS / editors
 .DS_Store
 .vscode/
+
+# Per-project Functions params, written by `node scripts/env.mjs prepare`
+functions/.env.*

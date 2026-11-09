@@ -6,5 +6,5 @@ import 'src/app.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final backend = await initFirebaseBackend();
-  runApp(AdminApp(backend: backend));
+  runApp(withEnvironmentBanner(AdminApp(backend: backend)));
 }

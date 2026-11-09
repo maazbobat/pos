@@ -12,5 +12,9 @@ Future<void> main() async {
   usePathUrlStrategy();
   WidgetsFlutterBinding.ensureInitialized();
   final backend = await initStorefrontBackend();
-  runApp(OnlineApp(backend: backend, analyticsSink: configuredAnalyticsSink()));
+  runApp(
+    withEnvironmentBanner(
+      OnlineApp(backend: backend, analyticsSink: configuredAnalyticsSink()),
+    ),
+  );
 }
